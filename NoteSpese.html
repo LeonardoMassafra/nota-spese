@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Note Spese · Studio Tecnico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f8f7f5;font-family:'Outfit',sans-serif}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  input,select,button{font-family:'Outfit',sans-serif}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:#f1f1f1}
+  ::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+const CATEGORIE = ["Carburante","Vitto","Alloggio","Trasporti","Pedaggi","Materiali","Pratiche","Telefonia","Attrezzatura","Cancelleria","Altro"];
+const TARIFFE_ACI = [
+  {label:"Benzina ≤1000cc — €0.28/km", val:0.2837},
+  {label:"Benzina 1001–1600cc — €0.39/km", val:0.3936},
+  {label:"Benzina 1601–2000cc — €0.47/km", val:0.4736},
+  {label:"Benzina >2000cc — €0.59/km", val:0.5876},
+  {label:"Diesel ≤1600cc — €0.38/km", val:0.3847},
+  {label:"Diesel 1601–2000cc — €0.44/km", val:0.4436},
+  {label:"Diesel >2000cc — €0.55/km", val:0.5467},
+  {label:"GPL / Metano — €0.28/km", val:0.2834},
+  {label:"Elettrica — €0.25/km", val:0.2500},
+];
+
+const fmt = n => Number(n).toLocaleString("it-IT",{style:"currency",currency:"EUR"});
+const today = () => new Date().toISOString().split("T")[0];
+const STORAGE_KEY = "notespese-studio-v1";
+
+function loadData(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||"null") || {commesse:[],spese:[],trasferte:[]}; }
+  catch(_){ return {commesse:[],spese:[],trasferte:[]}; }
+}
+function saveData(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(_){} }
+
+const iStyle = {width:"100%",padding:"10px 13px",border:"1px solid #ddd",borderRadius:8,fontSize:14,background:"#fff",color:"#1a1a1a",outline:"none",fontFamily:"inherit",boxSizing:"border-box",WebkitAppearance:"none",appearance:"none"};
+
+export default function App() {
+  const [state, setState] = useState(()=>loadData());
+  const [tab, setTab] = useState("commesse");
+  const [anno, setAnno] = useState(new Date().getFullYear());
+  const [mese, setMese] = useState(new Date().getMonth());
+  const [commFiltro, setCommFiltro] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [debug, setDebug] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [form, setForm] = useState({data:today(),importo:"",fornitore:"",categoria:"Altro",note:"",commessa:""});
+  const [commForm, setCommForm] = useState({nome:"",cliente:"",indirizzo:""});
+  const [trasForm, setTrasForm] = useState({data:today(),tariffa:0.3936,partenza:"",destinazione:"",km:"",note:"",commessa:""});
+  const fileRef = useRef();
+
+  useEffect(()=>{ saveData(state); },[state]);
+
+  function showToast(msg,type="ok"){
+    setToast({msg,type});
+    setTimeout(()=>setToast(null),3000);
+  }
+
+  const anni = [...new Set([new Date().getFullYear(),...state.spese.map(s=>new Date(s.data).getFullYear()),...state.trasferte.map(t=>new Date(t.data).getFullYear())])].sort((a,b)=>b-a);
+
+  async function handleImage(e){
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const base64 = ev.target.result.split(",")[1];
+      setPreview(ev.target.result);
+      setScanning(true);
+      setDebug({type:"info",title:"Analisi AI in corso...",msg:"Lettura documento..."});
+      try{
+        const res = await fetch("https://api.anthropic.com/v1/messages",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            model:"claude-sonnet-4-20250514",
+            max_tokens:600,
+            messages:[{role:"user",content:[
+              {type:"image",source:{type:"base64",media_type:file.type,data:base64}},
+              {type:"text",text:`Analizza questo documento di spesa (scontrino, pedaggio autostradale, ricevuta carburante, ecc).
+
+REGOLE IMPORTANTI:
+- Per PEDAGGI AUTOSTRADALI: la data è nel campo "DATA e ORA" in formato GG-MM-AAAA (es. 11-03-2026 = giorno 11, mese 03, anno 2026), converti in YYYY-MM-DD → 2026-03-11. L'importo è nella riga "PEDAGGIO € X.XX". Il fornitore è il nome dell'autostrada.
+- Per SCONTRINI normali: cerca la data stampata, il totale, il nome del negozio.
+- FORMATO DATA ITALIANO GG-MM-AAAA: primo numero=GIORNO, secondo=MESE, terzo=ANNO. Esempio 11-03-2026 → "2026-03-11"
+- NON usare mai la data di oggi. Estrai sempre la data dal documento.
+
+Rispondi SOLO con JSON valido, nessun testo prima o dopo:
+{"data":"YYYY-MM-DD","importo":9.00,"fornitore":"nome breve","categoria":"Pedaggi","note":"opzionale"}`}
+            ]}]
+          })
+        });
+        if(!res.ok){ const t=await res.text(); setDebug({type:"err",title:"Errore HTTP "+res.status,msg:t.substring(0,200)}); setScanning(false); return; }
+        const data = await res.json();
+        const block = data.content?.find(b=>b.type==="text");
+        if(!block){ setDebug({type:"err",title:"Nessuna risposta",msg:"L'AI non ha risposto."}); setScanning(false); return; }
+        let raw = block.text.trim().replace(/```json|```/g,"").trim();
+        const s=raw.indexOf("{"),en=raw.lastIndexOf("}");
+        if(s===-1||en===-1){ setDebug({type:"err",title:"JSON non trovato",msg:raw.substring(0,200)}); setScanning(false); return; }
+        raw=raw.substring(s,en+1);
+        let p;
+        try{ p=JSON.parse(raw); }catch(pe){ setDebug({type:"err",title:"Errore parsing",msg:raw.substring(0,200)}); setScanning(false); return; }
+        setForm(f=>({...f,
+          data:p.data||f.data,
+          importo:p.importo!=null?String(p.importo):f.importo,
+          fornitore:p.fornitore||f.fornitore,
+          categoria:CATEGORIE.includes(p.categoria)?p.categoria:f.categoria,
+          note:p.note||f.note
+        }));
+        setDebug({type:"ok",title:"Documento analizzato",msg:`Data: ${p.data||"—"} · Importo: ${p.importo!=null?fmt(p.importo):"—"} · Fornitore: ${p.fornitore||"—"} · Categoria: ${p.categoria||"—"}`});
+        showToast("Scontrino analizzato!");
+      }catch(err){
+        setDebug({type:"err",title:"Errore di rete",msg:err.message||String(err)});
+      }
+      setScanning(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function addCommessa(){
+    if(!commForm.nome||!commForm.cliente){showToast("Nome e cliente obbligatori","err");return;}
+    const nuova = {id:Date.now(),...commForm,creata:today()};
+    setState(s=>({...s,commesse:[...s.commesse,nuova]}));
+    setCommForm({nome:"",cliente:"",indirizzo:""});
+    showToast("Commessa aggiunta!");
+  }
+
+  function delCommessa(id){
+    if(!confirm("Eliminare commessa e tutte le sue voci?"))return;
+    setState(s=>({...s,commesse:s.commesse.filter(c=>c.id!==id),spese:s.spese.filter(x=>x.commessa!==id),trasferte:s.trasferte.filter(x=>x.commessa!==id)}));
+  }
+
+  function addSpesa(){
+    if(!form.importo||!form.fornitore){showToast("Importo e fornitore obbligatori","err");return;}
+    const commId = form.commessa ? parseInt(form.commessa) : state.commesse[0]?.id;
+    if(!commId){showToast("Crea prima una commessa","err");return;}
+    setState(s=>({...s,spese:[{id:Date.now(),commessa:commId,...form,importo:parseFloat(form.importo)},...s.spese]}));
+    setForm(f=>({data:today(),importo:"",fornitore:"",categoria:"Altro",note:"",commessa:f.commessa}));
+    setPreview(null); setDebug(null);
+    if(fileRef.current) fileRef.current.value="";
+    showToast("Spesa salvata! Puoi aggiungerne un'altra.");
+  }
+
+  function addTrasferta(){
+    const {km,partenza,destinazione,data,tariffa,note,commessa} = trasForm;
+    if(!km||!partenza||!destinazione){showToast("Inserisci km, partenza e destinazione","err");return;}
+    const commId = commessa ? parseInt(commessa) : state.commesse[0]?.id;
+    if(!commId){showToast("Crea prima una commessa","err");return;}
+    setState(s=>({...s,trasferte:[{id:Date.now(),commessa:commId,data,km:parseFloat(km),tariffa,rimborso:parseFloat(km)*tariffa,partenza,destinazione,note},...s.trasferte]}));
+    setTrasForm(f=>({...f,km:"",partenza:"",destinazione:"",note:""}));
+    showToast("Trasferta salvata!");
+  }
+
+  function delItem(id,tipo){
+    if(!confirm("Eliminare questa voce?"))return;
+    setState(s=>({...s,[tipo]:s[tipo].filter(x=>x.id!==id)}));
+  }
+
+  const spFilt = state.spese.filter(s=>new Date(s.data).getFullYear()===anno&&(mese===-1||new Date(s.data).getMonth()===mese)&&(!commFiltro||s.commessa===parseInt(commFiltro)));
+  const trFilt = state.trasferte.filter(t=>new Date(t.data).getFullYear()===anno&&(mese===-1||new Date(t.data).getMonth()===mese)&&(!commFiltro||t.commessa===parseInt(commFiltro)));
+  const totSp = spFilt.reduce((a,s)=>a+s.importo,0);
+  const totKm = trFilt.reduce((a,t)=>a+t.rimborso,0);
+
+  function esportaCSV(){
+    const rows=[["Tipo","Data","Descrizione","Commessa","Dettaglio","Importo €","Note"],
+      ...spFilt.map(s=>{const c=state.commesse.find(x=>x.id===s.commessa);return["Spesa",s.data,s.fornitore,c?.nome||"—",s.categoria,s.importo.toFixed(2),s.note||""];}),
+      ...trFilt.map(t=>{const c=state.commesse.find(x=>x.id===t.commessa);return["Trasferta",t.data,`${t.partenza} → ${t.destinazione}`,c?.nome||"—",`${t.km} km`,t.rimborso.toFixed(2),t.note||""];})
+    ].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows],{type:"text/csv;charset=utf-8;"}));
+    a.download=`NoteSpese_${anno}${mese>=0?"_"+MESI[mese]:""}.csv`;
+    a.click();
+  }
+
+  const DebugBox = debug && (
+    <div style={{
+      borderRadius:8,padding:"12px 14px",marginTop:10,fontSize:13,
+      ...(debug.type==="ok"?{background:"#F0FDF4",border:"1px solid #86EFAC",color:"#166534"}:
+         debug.type==="err"?{background:"#FEF2F2",border:"1px solid #FCA5A5",color:"#991B1B"}:
+         {background:"#EFF6FF",border:"1px solid #93C5FD",color:"#1E40AF"})
+    }}>
+      <div style={{fontWeight:700,marginBottom:4}}>{debug.title}</div>
+      <div>{debug.msg}</div>
+    </div>
+  );
+
+  return (
+    <div style={{fontFamily:"'Outfit',sans-serif",maxWidth:700,margin:"0 auto",padding:"20px 18px 80px",background:"#f8f7f5",minHeight:"100vh"}}>
+
+      {/* HEADER */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:20,borderBottom:"1px solid #e8e4dc"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:40,height:40,background:"#D85A30",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16,fontWeight:700}}>NS</div>
+          <div>
+            <div style={{fontSize:20,fontWeight:700,color:"#1a1a1a",letterSpacing:-0.3}}>Note Spese</div>
+            <div style={{fontSize:12,color:"#888",marginTop:1}}>Studio tecnico · AI powered</div>
+          </div>
+        </div>
+        <select style={{...iStyle,width:"auto",padding:"7px 12px",borderRadius:20,fontSize:13,color:"#555"}} value={anno} onChange={e=>setAnno(Number(e.target.value))}>
+          {anni.map(a=><option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {/* TABS */}
+      <div style={{display:"flex",borderBottom:"1px solid #e8e4dc",marginBottom:22}}>
+        {["commesse","spesa","trasferta","riepilogo"].map(id=>(
+          <button key={id} onClick={()=>setTab(id)} style={{padding:"10px 20px",border:"none",background:"transparent",fontSize:13,cursor:"pointer",borderBottom:`2px solid ${tab===id?"#D85A30":"transparent"}`,marginBottom:-1,fontWeight:tab===id?700:500,color:tab===id?"#D85A30":"#888",transition:"all .15s"}}>
+            {id==="commesse"?"Commesse":id==="spesa"?"Nuova spesa":id==="trasferta"?"Trasferta":"Riepilogo"}
+            {id==="riepilogo"&&(spFilt.length+trFilt.length)>0?` (${spFilt.length+trFilt.length})`:""}
+          </button>
+        ))}
+      </div>
+
+      {/* ---- COMMESSE ---- */}
+      {tab==="commesse"&&(<>
+        <div style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:14,padding:20,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:1,marginBottom:16}}>Nuova commessa</div>
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"0 0 5px"}}>Nome commessa</label>
+          <input style={iStyle} value={commForm.nome} onChange={e=>setCommForm(f=>({...f,nome:e.target.value}))} placeholder="Es. Perizia Rossi — Via Roma 5"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Cliente</label>
+              <input style={iStyle} value={commForm.cliente} onChange={e=>setCommForm(f=>({...f,cliente:e.target.value}))} placeholder="Cognome"/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Indirizzo cantiere</label>
+              <input style={iStyle} value={commForm.indirizzo} onChange={e=>setCommForm(f=>({...f,indirizzo:e.target.value}))} placeholder="Via, Comune"/>
+            </div>
+          </div>
+          <button style={{width:"100%",marginTop:16,padding:13,background:"#D85A30",color:"#fff",border:"none",borderRadius:9,fontSize:14,fontWeight:700,cursor:"pointer"}} onClick={addCommessa}>+ Aggiungi commessa</button>
+        </div>
+        {state.commesse.length===0&&<div style={{textAlign:"center",padding:"36px 0",color:"#aaa",fontSize:14}}>Nessuna commessa. Aggiungine una per iniziare.</div>}
+        {state.commesse.map(c=>{
+          const totS=state.spese.filter(s=>s.commessa===c.id).reduce((a,s)=>a+s.importo,0);
+          const totT=state.trasferte.filter(t=>t.commessa===c.id).reduce((a,t)=>a+t.rimborso,0);
+          return <div key={c.id} style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:12,padding:16,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,color:"#1a1a1a"}}>{c.nome}</div>
+                <div style={{fontSize:12,color:"#888",marginTop:3}}>{c.cliente}{c.indirizzo?" · "+c.indirizzo:""}</div>
+              </div>
+              <button style={{background:"none",border:"none",fontSize:18,color:"#ccc",cursor:"pointer"}} onClick={()=>delCommessa(c.id)}>×</button>
+            </div>
+            <div style={{display:"flex",gap:16,marginTop:12,paddingTop:12,borderTop:"1px solid #f0ebe0"}}>
+              {[["Spese",fmt(totS)],["Rimborso km",fmt(totT)],["Totale",fmt(totS+totT)]].map(([lbl,val],i)=>(
+                <div key={lbl} style={{flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:11,color:"#aaa",textTransform:"uppercase",letterSpacing:.5}}>{lbl}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:i===2?"#D85A30":"#1a1a1a",marginTop:3}}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </div>;
+        })}
+      </>)}
+
+      {/* ---- SPESA ---- */}
+      {tab==="spesa"&&(
+        <div style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:14,padding:20,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:1,marginBottom:16}}>Aggiungi spesa</div>
+
+          <div
+            onClick={()=>!scanning&&fileRef.current?.click()}
+            style={{border:`2px dashed ${scanning?"#D85A30":"#ddd"}`,borderRadius:12,padding:"28px 20px",textAlign:"center",cursor:scanning?"default":"pointer",background:scanning?"#fff5f0":"#fafaf8",marginBottom:4,animation:scanning?"pulse 1.2s infinite":"none"}}
+          >
+            {!preview&&!scanning&&<><div style={{fontSize:28,marginBottom:8}}>📸</div><div style={{fontSize:14,fontWeight:600,color:"#555"}}>Carica scontrino o ricevuta</div><div style={{fontSize:12,color:"#aaa",marginTop:3}}>Pedaggi, ristoranti, carburante, hotel...</div></>}
+            {scanning&&<><div style={{fontSize:22,marginBottom:8}}>🔍</div><div style={{fontSize:14,fontWeight:600,color:"#D85A30"}}>Analisi AI in corso...</div></>}
+            {preview&&!scanning&&<><img src={preview} style={{width:"100%",maxHeight:140,objectFit:"contain",borderRadius:8,marginTop:0}} alt="doc"/><div style={{fontSize:12,color:"#aaa",marginTop:8}}>Clicca per cambiare</div></>}
+            <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleImage}/>
+          </div>
+          {DebugBox}
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Commessa</label>
+          <select style={iStyle} value={form.commessa||""} onChange={e=>setForm(f=>({...f,commessa:e.target.value}))}>
+            {state.commesse.length===0?<option value="">Crea prima una commessa</option>:state.commesse.map(c=><option key={c.id} value={c.id}>{c.nome} — {c.cliente}</option>)}
+          </select>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div><label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Data</label><input type="date" style={iStyle} value={form.data} onChange={e=>setForm(f=>({...f,data:e.target.value}))}/></div>
+            <div><label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Importo €</label><input type="number" step="0.01" min="0" style={iStyle} value={form.importo} onChange={e=>setForm(f=>({...f,importo:e.target.value}))} placeholder="0.00"/></div>
+          </div>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Fornitore</label>
+          <input style={iStyle} value={form.fornitore} onChange={e=>setForm(f=>({...f,fornitore:e.target.value}))} placeholder="Es. Autostrada BS-VR, Eni, Autogrill..."/>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Categoria</label>
+          <select style={iStyle} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>
+            {CATEGORIE.map(c=><option key={c}>{c}</option>)}
+          </select>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Note (opzionale)</label>
+          <input style={iStyle} value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Breve descrizione..."/>
+
+          <button style={{width:"100%",marginTop:16,padding:13,background:"#D85A30",color:"#fff",border:"none",borderRadius:9,fontSize:14,fontWeight:700,cursor:"pointer"}} onClick={addSpesa}>Salva spesa</button>
+        </div>
+      )}
+
+      {/* ---- TRASFERTA ---- */}
+      {tab==="trasferta"&&(
+        <div style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:14,padding:20,marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:1,marginBottom:16}}>Nuova trasferta</div>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"0 0 5px"}}>Commessa</label>
+          <select style={iStyle} value={trasForm.commessa||""} onChange={e=>setTrasForm(f=>({...f,commessa:e.target.value}))}>
+            {state.commesse.length===0?<option value="">Crea prima una commessa</option>:state.commesse.map(c=><option key={c.id} value={c.id}>{c.nome} — {c.cliente}</option>)}
+          </select>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div><label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Data</label><input type="date" style={iStyle} value={trasForm.data} onChange={e=>setTrasForm(f=>({...f,data:e.target.value}))}/></div>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Tariffario ACI 2024</label>
+              <select style={iStyle} value={trasForm.tariffa} onChange={e=>setTrasForm(f=>({...f,tariffa:parseFloat(e.target.value)}))}>
+                {TARIFFE_ACI.map(t=><option key={t.val} value={t.val}>{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Indirizzo di partenza</label>
+          <input style={iStyle} value={trasForm.partenza} onChange={e=>setTrasForm(f=>({...f,partenza:e.target.value}))} placeholder="Es. Via Roma 1, Bovolone VR"/>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Indirizzo di destinazione</label>
+          <input style={iStyle} value={trasForm.destinazione} onChange={e=>setTrasForm(f=>({...f,destinazione:e.target.value}))} placeholder="Es. Piazza Bra 1, Verona VR"/>
+
+          <button onClick={()=>{
+            const p=trasForm.partenza.trim(),d=trasForm.destinazione.trim();
+            if(!p||!d){showToast("Inserisci partenza e destinazione","err");return;}
+            window.open(`https://www.google.com/maps/dir/${encodeURIComponent(p)}/${encodeURIComponent(d)}`,"_blank");
+          }} style={{width:"100%",marginTop:10,padding:10,background:"#EBF4FF",color:"#2563EB",border:"1px solid #BFDBFE",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+            Apri su Google Maps per verificare il percorso
+          </button>
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Km percorsi (andata + ritorno)</label>
+          <input type="number" step="0.1" min="0" style={iStyle} value={trasForm.km} onChange={e=>setTrasForm(f=>({...f,km:e.target.value}))} placeholder="Es. 42.5"/>
+
+          {parseFloat(trasForm.km)>0&&(
+            <div style={{background:"#fafaf8",border:"1px solid #e8e4dc",borderRadius:8,padding:"14px 16px",marginTop:12}}>
+              <div style={{fontSize:24,fontWeight:700,color:"#D85A30"}}>{fmt(parseFloat(trasForm.km)*trasForm.tariffa)}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:2}}>{trasForm.km} km × €{trasForm.tariffa.toFixed(4)}/km (tariffario ACI)</div>
+            </div>
+          )}
+
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"#888",margin:"14px 0 5px"}}>Note (opzionale)</label>
+          <input style={iStyle} value={trasForm.note} onChange={e=>setTrasForm(f=>({...f,note:e.target.value}))} placeholder="Es. Sopralluogo cantiere"/>
+
+          <button style={{width:"100%",marginTop:16,padding:13,background:"#D85A30",color:"#fff",border:"none",borderRadius:9,fontSize:14,fontWeight:700,cursor:"pointer"}} onClick={addTrasferta}>Salva trasferta</button>
+        </div>
+      )}
+
+      {/* ---- RIEPILOGO ---- */}
+      {tab==="riepilogo"&&(<>
+        <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
+          <select style={{...iStyle,flex:1}} value={mese} onChange={e=>setMese(Number(e.target.value))}>
+            <option value={-1}>Tutti i mesi</option>
+            {MESI.map((m,i)=><option key={m} value={i}>{m}</option>)}
+          </select>
+          <select style={{...iStyle,flex:1}} value={commFiltro} onChange={e=>setCommFiltro(e.target.value)}>
+            <option value="">Tutte le commesse</option>
+            {state.commesse.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          <button onClick={esportaCSV} style={{padding:"10px 14px",background:"transparent",border:"1px solid #ddd",borderRadius:8,fontSize:13,fontWeight:600,color:"#555",cursor:"pointer",whiteSpace:"nowrap"}}>⬇ CSV</button>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+          {[["Spese vive",fmt(totSp)],["Rimborso km",fmt(totKm)],["Totale rimborsi",fmt(totSp+totKm)]].map(([lbl,val])=>(
+            <div key={lbl} style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:10,padding:"14px 16px"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#aaa",textTransform:"uppercase",letterSpacing:.5}}>{lbl}</div>
+              <div style={{fontSize:22,fontWeight:700,color:"#D85A30",marginTop:5}}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{background:"#fff",border:"1px solid #ede9e0",borderRadius:14,padding:20}}>
+          {(()=>{
+            const tutti=[
+              ...spFilt.map(s=>{const c=state.commesse.find(x=>x.id===s.commessa);return{id:s.id,tipo:"spesa",data:s.data,name:s.fornitore,meta:`${new Date(s.data).toLocaleDateString("it-IT")} · ${s.categoria}${s.note?" · "+s.note:""} · ${c?.nome||"—"}`,val:s.importo};}),
+              ...trFilt.map(t=>{const c=state.commesse.find(x=>x.id===t.commessa);return{id:t.id,tipo:"km",data:t.data,name:`${t.partenza} → ${t.destinazione}`,meta:`${new Date(t.data).toLocaleDateString("it-IT")} · ${t.km} km · ${c?.nome||"—"}`,val:t.rimborso};})
+            ].sort((a,b)=>new Date(b.data)-new Date(a.data));
+            if(!tutti.length) return <div style={{textAlign:"center",padding:"36px 0",color:"#aaa",fontSize:14}}>Nessun dato per i filtri selezionati</div>;
+            return tutti.map((item,idx)=>(
+              <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 0",borderBottom:idx===tutti.length-1?"none":"1px solid #f5f0e8"}}>
+                <div style={{width:38,height:38,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,...(item.tipo==="spesa"?{background:"#FEF0EC",color:"#993C1D"}:{background:"#EFF6FF",color:"#1D4ED8"})}}>
+                  {item.tipo==="spesa"?"SP":"KM"}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div>
+                  <div style={{fontSize:12,color:"#888",marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.meta}</div>
+                </div>
+                <span style={{fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:20,marginRight:8,...(item.tipo==="spesa"?{background:"#FEF0EC",color:"#993C1D"}:{background:"#EFF6FF",color:"#1D4ED8"})}}>
+                  {item.tipo==="spesa"?"Spesa":"Km"}
+                </span>
+                <div style={{fontSize:15,fontWeight:700,color:"#1a1a1a",flexShrink:0,marginRight:4}}>{fmt(item.val)}</div>
+                <button style={{background:"none",border:"none",fontSize:16,color:"#ccc",cursor:"pointer",padding:"4px 6px"}} onClick={()=>delItem(item.id,item.tipo==="spesa"?"spese":"trasferte")}>×</button>
+              </div>
+            ));
+          })()}
+        </div>
+      </>)}
+
+      {toast&&(
+        <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",padding:"10px 22px",borderRadius:50,fontSize:13,fontWeight:600,zIndex:999,whiteSpace:"nowrap",color:"#fff",boxShadow:"0 4px 20px rgba(0,0,0,.15)",animation:"slideUp .3s ease",...(toast.type==="ok"?{background:"#1D9E75"}:{background:"#E24B4A"})}}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

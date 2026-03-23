@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accedi · Note Spese</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon">NS</div>
+        <div>
+          <div class="login-title">Note Spese</div>
+          <div class="login-sub">Studio Tecnico · AI powered</div>
+        </div>
+      </div>
+
+      <div id="loginForm">
+        <div class="form-group" style="margin-top:0">
+          <label>Email</label>
+          <input type="email" id="email" placeholder="tuo@email.it" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="errorMsg" style="display:none" class="error-msg"></div>
+        <button class="btn btn-primary" id="submitBtn" onclick="handleSubmit()">Accedi</button>
+        <div class="login-toggle">
+          Non hai un account? <a onclick="toggleMode()">Registrati</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/login.js"></script>
+</body>
+</html>

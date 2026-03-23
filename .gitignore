@@ -1,0 +1,22 @@
+# Dipendenze
+node_modules/
+
+# Database
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Variabili d'ambiente
+.env
+
+# Upload utenti
+uploads/*
+!uploads/.gitkeep
+
+# Log
+*.log
+npm-debug.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
