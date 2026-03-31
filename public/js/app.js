@@ -155,8 +155,8 @@ function renderCommesse() {
     ${commesse.length === 0
       ? '<div class="empty">Nessuna commessa. Aggiungine una per iniziare.</div>'
       : commesse.map(c => {
-          const totS = spese.filter(s => s.commessa_id === c.id).reduce((a,s) => a+s.importo, 0);
-          const totT = trasferte.filter(t => t.commessa_id === c.id).reduce((a,t) => a+t.rimborso, 0);
+          const totS = spese.filter(s => s.commessa_id === c.id).reduce((a,s) => a+parseFloat(s.importo), 0);
+          const totT = trasferte.filter(t => t.commessa_id === c.id).reduce((a,t) => a+parseFloat(t.rimborso), 0);
           return `
             <div class="card-sm">
               <div class="commessa-header">
@@ -329,8 +329,8 @@ function filteredItems() {
 function renderRiepilogo() {
   const { commesse, anno, mese, commFiltro } = state;
   const { spFilt, trFilt } = filteredItems();
-  const totSp = spFilt.reduce((a,s) => a+s.importo, 0);
-  const totKm = trFilt.reduce((a,t) => a+t.rimborso, 0);
+  const totSp = spFilt.reduce((a,s) => a+parseFloat(s.importo), 0);
+  const totKm = trFilt.reduce((a,t) => a+parseFloat(t.rimborso), 0);
 
   const allItems = [
     ...spFilt.map(s => {
