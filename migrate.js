@@ -1,7 +1,6 @@
 // Script di migrazione: crea le tabelle PostgreSQL
 // Esegui con: node migrate.js
 
-require('dotenv').config({ path: '.env' });
 const pool = require('./database');
 
 async function migrate() {
