@@ -16,8 +16,8 @@ const upload = multer({
   storage,
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Solo immagini consentite'));
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Solo immagini e PDF consentiti'));
   },
 });
 
@@ -82,7 +82,9 @@ router.post('/analyze', requireAuth, upload.single('photo'), async (req, res) =>
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            mediaType === 'application/pdf'
+              ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+              : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
             { type: 'text', text: AI_PROMPT },
           ],
         }],
