@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const db = require('../database');
+const pool = require('../database');
 const { requireAuth } = require('../middleware/auth');
 
 const DEFAULT_TARIFFE = [
@@ -18,7 +18,6 @@ function parseTariffe(json) {
   if (!json) return DEFAULT_TARIFFE;
   try {
     const parsed = JSON.parse(json);
-    // Merge con DEFAULT per garantire tutti i campi anche dopo future aggiunte
     return DEFAULT_TARIFFE.map(def => {
       const saved = parsed.find(t => t.id === def.id);
       return saved ? { ...def, val: Number(saved.val) || def.val } : def;
@@ -26,41 +25,54 @@ function parseTariffe(json) {
   } catch(_) { return DEFAULT_TARIFFE; }
 }
 
-router.get('/', requireAuth, (req, res) => {
-  const settings = db.prepare('SELECT * FROM settings WHERE user_id = ?').get(req.user.id);
-  const key = settings?.anthropic_api_key || '';
-  res.json({
-    has_api_key: key.length > 0,
-    api_key_preview: key.length > 4 ? '••••••••' + key.slice(-4) : (key.length > 0 ? '••••' : ''),
-    tariffe: parseTariffe(settings?.tariffe_json),
-  });
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
+    const settings = rows[0];
+    const key = settings?.anthropic_api_key || '';
+    res.json({
+      has_api_key: key.length > 0,
+      api_key_preview: key.length > 4 ? '••••••••' + key.slice(-4) : (key.length > 0 ? '••••' : ''),
+      tariffe: parseTariffe(settings?.tariffe_json),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
 });
 
-router.put('/', requireAuth, (req, res) => {
+router.put('/', requireAuth, async (req, res) => {
   const { anthropic_api_key, tariffe } = req.body;
-  const current = db.prepare('SELECT * FROM settings WHERE user_id = ?').get(req.user.id);
 
-  // Chiave API: aggiorna solo se non vuota
-  const newKey = (anthropic_api_key || '').trim() || current?.anthropic_api_key || '';
+  try {
+    const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
+    const current = rows[0];
 
-  // Tariffe: valida e salva
-  let newTariffeJson = current?.tariffe_json || null;
-  if (Array.isArray(tariffe) && tariffe.length > 0) {
-    const validated = DEFAULT_TARIFFE.map(def => {
-      const t = tariffe.find(x => x.id === def.id);
-      const val = t ? Math.max(0, Number(t.val) || 0) : def.val;
-      return { id: def.id, label: def.label, val };
-    });
-    newTariffeJson = JSON.stringify(validated);
+    const newKey = (anthropic_api_key || '').trim() || current?.anthropic_api_key || '';
+
+    let newTariffeJson = current?.tariffe_json || null;
+    if (Array.isArray(tariffe) && tariffe.length > 0) {
+      const validated = DEFAULT_TARIFFE.map(def => {
+        const t = tariffe.find(x => x.id === def.id);
+        const val = t ? Math.max(0, Number(t.val) || 0) : def.val;
+        return { id: def.id, label: def.label, val };
+      });
+      newTariffeJson = JSON.stringify(validated);
+    }
+
+    await pool.query(
+      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json) VALUES ($1, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE SET
+         anthropic_api_key = EXCLUDED.anthropic_api_key,
+         tariffe_json = EXCLUDED.tariffe_json`,
+      [req.user.id, newKey, newTariffeJson]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
   }
-
-  db.prepare(`INSERT INTO settings (user_id, anthropic_api_key, tariffe_json) VALUES (?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET
-      anthropic_api_key = excluded.anthropic_api_key,
-      tariffe_json      = excluded.tariffe_json`)
-    .run(req.user.id, newKey, newTariffeJson);
-
-  res.json({ ok: true });
 });
 
 module.exports = router;

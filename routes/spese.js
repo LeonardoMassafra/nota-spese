@@ -2,7 +2,7 @@ const router = require('express').Router();
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const db = require('../database');
+const pool = require('../database');
 const { requireAuth } = require('../middleware/auth');
 
 const storage = multer.diskStorage({
@@ -35,9 +35,17 @@ Rispondi SOLO con JSON valido, nessun testo prima o dopo:
 Categorie valide: Carburante, Vitto, Alloggio, Trasporti, Pedaggi, Materiali, Pratiche, Telefonia, Attrezzatura, Cancelleria, Altro`;
 
 // GET all spese for current user
-router.get('/', requireAuth, (req, res) => {
-  const spese = db.prepare('SELECT * FROM spese WHERE user_id = ? ORDER BY data DESC, created_at DESC').all(req.user.id);
-  res.json(spese);
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM spese WHERE user_id = $1 ORDER BY data DESC, created_at DESC',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
 });
 
 // POST analyze: upload photo + AI extraction
@@ -45,13 +53,18 @@ router.post('/analyze', requireAuth, upload.single('photo'), async (req, res) =>
   if (!req.file) return res.status(400).json({ error: 'Nessun file caricato' });
 
   const foto_filename = req.file.filename;
-  const settings = db.prepare('SELECT anthropic_api_key FROM settings WHERE user_id = ?').get(req.user.id);
-
-  if (!settings?.anthropic_api_key) {
-    return res.json({ ok: true, foto_filename, extracted: null, message: 'Configura la chiave API Anthropic nelle Impostazioni per abilitare l\'analisi AI' });
-  }
 
   try {
+    const { rows } = await pool.query(
+      'SELECT anthropic_api_key FROM settings WHERE user_id = $1',
+      [req.user.id]
+    );
+    const settings = rows[0];
+
+    if (!settings?.anthropic_api_key) {
+      return res.json({ ok: true, foto_filename, extracted: null, message: 'Configura la chiave API Anthropic nelle Impostazioni per abilitare l\'analisi AI' });
+    }
+
     const filePath = path.join(__dirname, '..', 'uploads', foto_filename);
     const base64 = fs.readFileSync(filePath).toString('base64');
     const mediaType = req.file.mimetype;
@@ -100,30 +113,45 @@ router.post('/analyze', requireAuth, upload.single('photo'), async (req, res) =>
 });
 
 // POST create spesa
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const { commessa_id, data, importo, fornitore, categoria, note, foto_filename } = req.body;
   if (!commessa_id || !data || !importo || !fornitore || !categoria) {
     return res.status(400).json({ error: 'Campi obbligatori mancanti' });
   }
 
-  const commessa = db.prepare('SELECT id FROM commesse WHERE id = ? AND user_id = ?').get(commessa_id, req.user.id);
-  if (!commessa) return res.status(400).json({ error: 'Commessa non valida' });
+  try {
+    const check = await pool.query(
+      'SELECT id FROM commesse WHERE id = $1 AND user_id = $2',
+      [commessa_id, req.user.id]
+    );
+    if (check.rows.length === 0) return res.status(400).json({ error: 'Commessa non valida' });
 
-  const result = db.prepare(
-    'INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), foto_filename || null);
-
-  const nuova = db.prepare('SELECT * FROM spese WHERE id = ?').get(result.lastInsertRowid);
-  res.json(nuova);
+    const { rows } = await pool.query(
+      'INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), foto_filename || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
 });
 
 // DELETE spesa
-router.delete('/:id', requireAuth, (req, res) => {
-  const item = db.prepare('SELECT id, foto_filename FROM spese WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-  if (!item) return res.status(404).json({ error: 'Spesa non trovata' });
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const check = await pool.query(
+      'SELECT id, foto_filename FROM spese WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Spesa non trovata' });
 
-  db.prepare('DELETE FROM spese WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+    await pool.query('DELETE FROM spese WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
 });
 
 module.exports = router;

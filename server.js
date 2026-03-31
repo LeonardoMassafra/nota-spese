@@ -1,18 +1,19 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const pool = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Session store con SQLite
-const SQLiteStore = require('connect-sqlite3')(session);
+// Session store con PostgreSQL
+const PgSession = require('connect-pg-simple')(session);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.sqlite', dir: __dirname }),
+  store: new PgSession({ pool, createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'notespese-secret-studio-tecnico-2024',
   resave: false,
   saveUninitialized: false,
