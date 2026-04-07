@@ -761,7 +761,7 @@ function esportaCSV() {
   const { spese, trasferte, commesse, anno, mese } = state;
   const { spFilt, trFilt } = filteredItems();
   const rows = [
-    ['Tipo','Data','Descrizione','Commessa','Dettaglio','Importo €','Note'],
+    ['Tipo','Data','Descrizione','Commessa','Dettaglio','Importo (€)','Note'],
     ...spFilt.map(s => {
       const c = commesse.find(x => x.id === s.commessa_id);
       return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, pf(s.importo).toFixed(2), s.note||''];
@@ -770,7 +770,7 @@ function esportaCSV() {
       const c = commesse.find(x => x.id === t.commessa_id);
       return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, pf(t.rimborso).toFixed(2), t.note||''];
     }),
-  ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
 
   const filename = `NoteSpese_${anno}${mese >= 0 ? '_' + MESI[mese] : ''}.csv`;
   const a = document.createElement('a');
