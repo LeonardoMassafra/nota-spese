@@ -17,7 +17,10 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   const { commessa_id, data, partenza, destinazione, km, tariffa, note } = req.body;
+  console.log('[POST /api/trasferte] body ricevuto:', { commessa_id, data, partenza, destinazione, km, tariffa, note });
+
   if (!commessa_id || !data || !partenza || !destinazione || !km || !tariffa) {
+    console.error('[POST /api/trasferte] Campi mancanti:', { commessa_id, data, partenza, destinazione, km, tariffa });
     return res.status(400).json({ error: 'Campi obbligatori mancanti' });
   }
 
@@ -26,7 +29,10 @@ router.post('/', requireAuth, async (req, res) => {
       'SELECT id FROM commesse WHERE id = $1 AND user_id = $2',
       [commessa_id, req.user.id]
     );
-    if (check.rows.length === 0) return res.status(400).json({ error: 'Commessa non valida' });
+    if (check.rows.length === 0) {
+      console.error('[POST /api/trasferte] Commessa non trovata:', { commessa_id, user_id: req.user.id });
+      return res.status(400).json({ error: 'Commessa non valida' });
+    }
 
     const kmNum = parseFloat(km);
     const tariffaNum = parseFloat(tariffa);
@@ -36,9 +42,10 @@ router.post('/', requireAuth, async (req, res) => {
       'INSERT INTO trasferte (user_id, commessa_id, data, partenza, destinazione, km, tariffa, rimborso, note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
       [req.user.id, commessa_id, data, partenza.trim(), destinazione.trim(), kmNum, tariffaNum, rimborso, (note || '').trim()]
     );
+    console.log('[POST /api/trasferte] Salvata con id:', rows[0]?.id);
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('[POST /api/trasferte] Errore query:', err);
     res.status(500).json({ error: 'Errore server' });
   }
 });

@@ -767,7 +767,7 @@ function esportaCSV() {
     }),
     ...trFilt.map(t => {
       const c = commesse.find(x => x.id === t.commessa_id);
-      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${t.km} km`, parseFloat(t.rimborso).toFixed(2), t.note||''];
+      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${parseFloat(t.km)} km`, parseFloat(t.rimborso).toFixed(2), t.note||''];
     }),
   ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
 
