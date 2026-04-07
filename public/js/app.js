@@ -21,6 +21,7 @@ const tariffLabel = t => `${t.label} — €${t.val.toFixed(4)}/km`;
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 const fmt = n => Number(n).toLocaleString("it-IT", {style:"currency", currency:"EUR"});
+const pf = v => parseFloat(String(v).replace(',', '.')) || 0;
 const today = () => new Date().toISOString().split("T")[0];
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const dateIt = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('it-IT') : '—';
@@ -155,8 +156,8 @@ function renderCommesse() {
     ${commesse.length === 0
       ? '<div class="empty">Nessuna commessa. Aggiungine una per iniziare.</div>'
       : commesse.map(c => {
-          const totS = spese.filter(s => s.commessa_id === c.id).reduce((a,s) => a+parseFloat(s.importo), 0);
-          const totT = trasferte.filter(t => t.commessa_id === c.id).reduce((a,t) => a+parseFloat(t.rimborso), 0);
+          const totS = spese.filter(s => s.commessa_id === c.id).reduce((a,s) => a+pf(s.importo), 0);
+          const totT = trasferte.filter(t => t.commessa_id === c.id).reduce((a,t) => a+pf(t.rimborso), 0);
           return `
             <div class="card-sm">
               <div class="commessa-header">
@@ -329,8 +330,8 @@ function filteredItems() {
 function renderRiepilogo() {
   const { commesse, anno, mese, commFiltro } = state;
   const { spFilt, trFilt } = filteredItems();
-  const totSp = spFilt.reduce((a,s) => a+parseFloat(s.importo), 0);
-  const totKm = trFilt.reduce((a,t) => a+parseFloat(t.rimborso), 0);
+  const totSp = spFilt.reduce((a,s) => a+pf(s.importo), 0);
+  const totKm = trFilt.reduce((a,t) => a+pf(t.rimborso), 0);
 
   const allItems = [
     ...spFilt.map(s => {
@@ -763,11 +764,11 @@ function esportaCSV() {
     ['Tipo','Data','Descrizione','Commessa','Dettaglio','Importo €','Note'],
     ...spFilt.map(s => {
       const c = commesse.find(x => x.id === s.commessa_id);
-      return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, parseFloat(s.importo).toFixed(2), s.note||''];
+      return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, pf(s.importo).toFixed(2), s.note||''];
     }),
     ...trFilt.map(t => {
       const c = commesse.find(x => x.id === t.commessa_id);
-      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${parseFloat(t.km)} km`, parseFloat(t.rimborso).toFixed(2), t.note||''];
+      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, pf(t.rimborso).toFixed(2), t.note||''];
     }),
   ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
 
