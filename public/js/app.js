@@ -764,11 +764,11 @@ function esportaCSV() {
     ['Tipo','Data','Descrizione','Commessa','Dettaglio','Importo (€)','Note'],
     ...spFilt.map(s => {
       const c = commesse.find(x => x.id === s.commessa_id);
-      return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, pf(s.importo).toFixed(2), s.note||''];
+      return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, pf(s.importo).toFixed(2).replace('.',','), s.note||''];
     }),
     ...trFilt.map(t => {
       const c = commesse.find(x => x.id === t.commessa_id);
-      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, pf(t.rimborso).toFixed(2), t.note||''];
+      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, pf(t.rimborso).toFixed(2).replace('.',','), t.note||''];
     }),
   ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
 
