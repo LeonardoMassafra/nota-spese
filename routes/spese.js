@@ -21,6 +21,16 @@ const upload = multer({
   },
 });
 
+// Deduce il content-type dal nome file (in fase di salvataggio non abbiamo il mimetype originale)
+function mimeFromName(name) {
+  const ext = path.extname(name || '').toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.heic' || ext === '.heif') return 'image/heic';
+  if (ext === '.pdf') return 'application/pdf';
+  return 'image/jpeg';
+}
+
 const AI_PROMPT = `Analizza questo documento di spesa (scontrino, pedaggio autostradale, ricevuta carburante, ecc).
 
 REGOLE IMPORTANTI:
@@ -38,7 +48,7 @@ Categorie valide: Carburante, Vitto, Alloggio, Trasporti, Pedaggi, Materiali, Pr
 router.get('/', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM spese WHERE user_id = $1 ORDER BY data DESC, created_at DESC',
+      'SELECT id, user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, created_at FROM spese WHERE user_id = $1 ORDER BY data DESC, created_at DESC',
       [req.user.id]
     );
     res.json(rows);
@@ -128,12 +138,69 @@ router.post('/', requireAuth, async (req, res) => {
     );
     if (check.rows.length === 0) return res.status(400).json({ error: 'Commessa non valida' });
 
+    // Legge il file temporaneo su disco e lo salva DENTRO il database (BYTEA),
+    // così la foto sopravvive ai redeploy (il disco dell'host è effimero).
+    let fotoData = null, fotoMime = null;
+    if (foto_filename) {
+      const fp = path.join(__dirname, '..', 'uploads', foto_filename);
+      if (fs.existsSync(fp)) {
+        fotoData = fs.readFileSync(fp);
+        fotoMime = mimeFromName(foto_filename);
+        try { fs.unlinkSync(fp); } catch (_) {} // il file su disco è solo di appoggio
+      }
+    }
+
     const { rows } = await pool.query(
-      'INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), foto_filename || null]
+      `INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, foto_data, foto_mime)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, created_at`,
+      [req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), foto_filename || null, fotoData, fotoMime]
     );
     res.json(rows[0]);
   } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+
+// GET foto scontrino: serve l'immagine salvata nel DB (solo del proprietario)
+router.get('/:id/foto', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT foto_data, foto_mime, foto_filename FROM spese WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    const row = rows[0];
+    if (!row || !row.foto_data) return res.status(404).send('Scontrino non disponibile');
+
+    res.set('Content-Type', row.foto_mime || mimeFromName(row.foto_filename));
+    // inline = visualizza nel browser; l'utente può comunque scaricarlo
+    res.set('Content-Disposition', `inline; filename="scontrino-${req.params.id}${path.extname(row.foto_filename || '') || '.jpg'}"`);
+    res.set('Cache-Control', 'private, max-age=31536000');
+    res.send(row.foto_data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Errore server');
+  }
+});
+
+// POST allega/sostituisce la foto su una spesa ESISTENTE
+// (serve a recuperare gli scontrini vecchi ricaricandoli dal telefono, senza creare doppioni)
+router.post('/:id/foto', requireAuth, upload.single('photo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nessun file caricato' });
+  const fp = path.join(__dirname, '..', 'uploads', req.file.filename);
+  try {
+    const fotoData = fs.readFileSync(fp);
+    const fotoMime = req.file.mimetype || mimeFromName(req.file.filename);
+    const { rowCount } = await pool.query(
+      'UPDATE spese SET foto_data = $1, foto_mime = $2, foto_filename = $3 WHERE id = $4 AND user_id = $5',
+      [fotoData, fotoMime, req.file.filename, req.params.id, req.user.id]
+    );
+    try { fs.unlinkSync(fp); } catch (_) {} // il file su disco è solo di appoggio
+    if (rowCount === 0) return res.status(404).json({ error: 'Spesa non trovata' });
+    res.json({ ok: true, foto_filename: req.file.filename });
+  } catch (err) {
+    try { fs.unlinkSync(fp); } catch (_) {}
     console.error(err);
     res.status(500).json({ error: 'Errore server' });
   }

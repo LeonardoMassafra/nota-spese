@@ -390,7 +390,11 @@ function renderRiepilogo() {
             <span class="item-tag ${item.tipo==='spesa'?'item-tag-sp':'item-tag-km'}">
               ${item.tipo==='spesa'?'Spesa':'Km'}
             </span>
-            ${item.foto ? `<a href="/uploads/${esc(item.foto)}" target="_blank" class="item-foto-link" title="Vedi scontrino">🧾</a>` : ''}
+            ${item.foto
+              ? `<a href="/api/spese/${item.id}/foto" target="_blank" rel="noopener" class="item-foto-link" title="Vedi scontrino">🧾</a>`
+              : (item.tipo==='spesa'
+                  ? `<button class="btn-icon item-foto-attach" data-action="attach-foto" data-id="${item.id}" title="Allega scontrino dal telefono">📎</button>`
+                  : '')}
             <div class="item-val">${fmt(item.val)}</div>
             <button class="btn-icon" data-action="${item.tipo==='spesa'?'del-spesa':'del-trasferta'}" data-id="${item.id}">×</button>
           </div>`).join('')
@@ -509,6 +513,31 @@ function handleDelegatedClick(e) {
   if (action === 'del-commessa') deleteCommessa(parseInt(id));
   if (action === 'del-spesa') deleteSpesa(parseInt(id));
   if (action === 'del-trasferta') deleteTrasferta(parseInt(id));
+  if (action === 'attach-foto') attachFotoToSpesa(parseInt(id));
+}
+
+// Allega uno scontrino a una spesa già esistente (recupero foto vecchie dal telefono)
+function attachFotoToSpesa(id) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*,application/pdf';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    showToast('Carico lo scontrino...');
+    try {
+      const fd = new FormData();
+      fd.append('photo', file);
+      const r = await fetch(`/api/spese/${id}/foto`, { method:'POST', body:fd });
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || 'Errore caricamento');
+      const sp = state.spese.find(s => s.id === id);
+      if (sp) sp.foto_filename = data.foto_filename;
+      showToast('Scontrino allegato!');
+      render();
+    } catch (err) { showToast(err.message, 'err'); }
+  };
+  input.click();
 }
 
 // ── Commesse listeners ─────────────────────────────────────────────────────────

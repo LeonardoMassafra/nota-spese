@@ -59,6 +59,12 @@ async function migrate() {
       );
     `);
 
+    // Colonne per salvare la foto dello scontrino dentro il DB (persistente ai redeploy)
+    await client.query(`
+      ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_data BYTEA;
+      ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_mime TEXT;
+    `);
+
     await client.query('COMMIT');
     console.log('Migrazione completata con successo.');
   } catch (err) {

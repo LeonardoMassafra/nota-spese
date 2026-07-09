@@ -6,6 +6,13 @@ const pool = require('./database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Auto-migrazione idempotente: garantisce le colonne per la foto salvata nel DB.
+// Così un semplice deploy (git push) applica lo schema senza comandi manuali.
+pool.query(`
+  ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_data BYTEA;
+  ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_mime TEXT;
+`).catch(err => console.error('Auto-migrazione foto:', err.message));
+
 // Session store con PostgreSQL
 const PgSession = require('connect-pg-simple')(session);
 
