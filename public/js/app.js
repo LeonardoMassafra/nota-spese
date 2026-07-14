@@ -470,8 +470,8 @@ function documentoDati() {
   const rows = [];
   sp.forEach(s => rows.push({
     data: s.data, tipo: 'Spesa', descrizione: s.fornitore, commessa: commNome(s.commessa_id),
-    dettaglio: s.categoria + (s.note ? ' · ' + s.note : ''), pagamento: s.pagamento || '',
-    importo: pf(s.importo), cls: 'row-sp',
+    dettaglio: s.categoria + (s.note ? ' · ' + s.note : '') + (s.foto_filename ? ' · 📎 scontrino allegato' : ''),
+    pagamento: s.pagamento || '', importo: pf(s.importo), cls: 'row-sp',
   }));
   tr.forEach(t => {
     const cat = catTariffa(t.tariffa);
@@ -513,6 +513,7 @@ function renderDocumento() {
         ${MESI.map((m,i) => `<option value="${i}" ${mese===i?'selected':''}>${m} ${anno}</option>`).join('')}
       </select>
       <button class="btn btn-primary" id="printDocBtn">🖨 Stampa / Salva PDF</button>
+      <button class="btn btn-outline" id="zipScontriniBtn">⬇ Scontrini (ZIP)</button>
     </div>
     ${!nome ? `<div class="doc-hint no-print">Compila l'intestazione (nome, P.IVA, indirizzo) in <b>Impostazioni</b> per completare il documento.</div>` : ''}
 
@@ -715,6 +716,61 @@ function attachDocumentoListeners() {
     render();
   });
   document.getElementById('printDocBtn')?.addEventListener('click', () => window.print());
+  document.getElementById('zipScontriniBtn')?.addEventListener('click', esportaScontriniZip);
+}
+
+// Scarica in un unico ZIP tutti gli scontrini (foto) del periodo selezionato,
+// pronti da allegare alla nota spese per il commercialista.
+async function esportaScontriniZip() {
+  const { spese, anno, mese } = state;
+  const inPeriodo = d => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.getFullYear() === anno && (mese === -1 || dt.getMonth() === mese);
+  };
+  const conFoto = spese.filter(s => inPeriodo(s.data) && s.foto_filename);
+
+  if (typeof JSZip === 'undefined') { showToast('Libreria ZIP non caricata, ricarica la pagina', 'err'); return; }
+  if (conFoto.length === 0) { showToast('Nessuno scontrino allegato in questo periodo', 'err'); return; }
+
+  const extFromType = (t, fname) => {
+    if (t === 'image/jpeg') return 'jpg';
+    if (t === 'image/png') return 'png';
+    if (t === 'image/webp') return 'webp';
+    if (t === 'image/heic' || t === 'image/heif') return 'heic';
+    if (t === 'application/pdf') return 'pdf';
+    const m = (fname || '').match(/\.([a-z0-9]+)$/i);
+    return m ? m[1].toLowerCase() : 'jpg';
+  };
+  const slug = s => String(s || '')
+    .replace(/[àáâä]/gi,'a').replace(/[èéêë]/gi,'e').replace(/[ìíîï]/gi,'i')
+    .replace(/[òóôö]/gi,'o').replace(/[ùúûü]/gi,'u').replace(/[ç]/gi,'c')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'scontrino';
+
+  showToast(`Preparo ${conFoto.length} scontrini...`);
+  try {
+    const zip = new JSZip();
+    let ok = 0;
+    for (const s of conFoto) {
+      const r = await fetch(`/api/spese/${s.id}/foto`);
+      if (!r.ok) continue;
+      const blob = await r.blob();
+      const ext = extFromType(blob.type, s.foto_filename);
+      zip.file(`${s.data}_${slug(s.fornitore)}_${s.id}.${ext}`, blob);
+      ok++;
+    }
+    if (ok === 0) { showToast('Impossibile recuperare gli scontrini', 'err'); return; }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const filename = `Scontrini_${anno}${mese >= 0 ? '_' + MESI[mese] : ''}.zip`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(content);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showToast(`${ok} scontrini scaricati`);
+  } catch (err) {
+    showToast('Errore creazione ZIP: ' + err.message, 'err');
+  }
 }
 
 function handleDelegatedClick(e) {
