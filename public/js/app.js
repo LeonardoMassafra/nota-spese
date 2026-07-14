@@ -67,7 +67,8 @@ const state = {
   editTrasfertaId: null, // id trasferta in modifica (null = nuova)
 
   settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})),
-                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '', operatore: '' },
+                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '', operatore: '',
+                  veicolo: '', targa: '' },
 
   toastTimer: null,
 };
@@ -504,6 +505,8 @@ function renderDocumento() {
   const piva = settings.emittente_piva || '';
   const indir = settings.emittente_indirizzo || '';
   const operatore = settings.operatore || '';
+  const veicolo = settings.veicolo || '';
+  const targa = settings.targa || '';
   const oggi = new Date().toLocaleDateString('it-IT');
 
   return `
@@ -534,6 +537,10 @@ function renderDocumento() {
       <div class="doc-operatore">
         <span class="doc-op-label">Rimborso spettante a</span>
         <span class="doc-op-nome">${esc(operatore) || '________________________'}</span>
+        ${(veicolo || targa) ? `<span class="doc-op-veicolo">
+          ${veicolo ? `<span><span class="doc-op-sub">Veicolo</span> ${esc(veicolo)}</span>` : ''}
+          ${targa ? `<span><span class="doc-op-sub">Targa</span> ${esc(targa)}</span>` : ''}
+        </span>` : ''}
       </div>
 
       ${rows.length === 0
@@ -608,6 +615,16 @@ function renderImpostazioni() {
       <div class="form-group">
         <label>Operatore (a chi spetta il rimborso)</label>
         <input id="emOperatore" value="${esc(settingsForm.operatore)}" placeholder="Es. Geom. Leonardo Massafra">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Veicolo (tipo/modello)</label>
+          <input id="emVeicolo" value="${esc(settingsForm.veicolo)}" placeholder="Es. Fiat Panda 1.3 Diesel">
+        </div>
+        <div class="form-group">
+          <label>Targa</label>
+          <input id="emTarga" value="${esc(settingsForm.targa)}" placeholder="Es. GA123XX">
+        </div>
       </div>
       <button class="btn btn-primary" id="saveAnagraficaBtn">Salva intestazione</button>
     </div>
@@ -1168,7 +1185,7 @@ function attachImpostazioniListeners() {
   });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', saveSettings);
 
-  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo', emOperatore:'operatore' };
+  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo', emOperatore:'operatore', emVeicolo:'veicolo', emTarga:'targa' };
   Object.entries(emFields).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', e => { state.settingsForm[key] = e.target.value; });
   });
@@ -1180,14 +1197,18 @@ async function saveAnagrafica() {
   const emittente_piva      = document.getElementById('emPiva')?.value      ?? state.settingsForm.emittente_piva;
   const emittente_indirizzo = document.getElementById('emIndirizzo')?.value ?? state.settingsForm.emittente_indirizzo;
   const operatore           = document.getElementById('emOperatore')?.value ?? state.settingsForm.operatore;
+  const veicolo             = document.getElementById('emVeicolo')?.value    ?? state.settingsForm.veicolo;
+  const targa               = document.getElementById('emTarga')?.value      ?? state.settingsForm.targa;
   try {
-    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo, operatore });
+    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa });
     const s = await fetch('/api/settings').then(r => r.json());
     state.settings = s;
     state.settingsForm.emittente_nome = s.emittente_nome || '';
     state.settingsForm.emittente_piva = s.emittente_piva || '';
     state.settingsForm.emittente_indirizzo = s.emittente_indirizzo || '';
     state.settingsForm.operatore = s.operatore || '';
+    state.settingsForm.veicolo = s.veicolo || '';
+    state.settingsForm.targa = s.targa || '';
     showToast('Intestazione salvata!');
     render();
   } catch(err) { showToast(err.message, 'err'); }
@@ -1247,6 +1268,8 @@ async function init() {
     state.settingsForm.emittente_piva = settings.emittente_piva || '';
     state.settingsForm.emittente_indirizzo = settings.emittente_indirizzo || '';
     state.settingsForm.operatore = settings.operatore || '';
+    state.settingsForm.veicolo = settings.veicolo || '';
+    state.settingsForm.targa = settings.targa || '';
 
     // Tariffa di default: Benzina 1001-1600cc (indice 1)
     state.trasForm.tariffa = state.tariffe[1]?.val ?? state.tariffe[0]?.val ?? 0.3936;

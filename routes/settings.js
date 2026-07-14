@@ -38,6 +38,8 @@ router.get('/', requireAuth, async (req, res) => {
       emittente_piva: settings?.emittente_piva || '',
       emittente_indirizzo: settings?.emittente_indirizzo || '',
       operatore: settings?.operatore || '',
+      veicolo: settings?.veicolo || '',
+      targa: settings?.targa || '',
     });
   } catch (err) {
     console.error(err);
@@ -46,7 +48,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.put('/', requireAuth, async (req, res) => {
-  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo, operatore } = req.body;
+  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa } = req.body;
 
   try {
     const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
@@ -69,18 +71,22 @@ router.put('/', requireAuth, async (req, res) => {
     const newPiva = emittente_piva !== undefined ? String(emittente_piva).trim() : (current?.emittente_piva || '');
     const newIndirizzo = emittente_indirizzo !== undefined ? String(emittente_indirizzo).trim() : (current?.emittente_indirizzo || '');
     const newOperatore = operatore !== undefined ? String(operatore).trim() : (current?.operatore || '');
+    const newVeicolo = veicolo !== undefined ? String(veicolo).trim() : (current?.veicolo || '');
+    const newTarga = targa !== undefined ? String(targa).trim() : (current?.targa || '');
 
     await pool.query(
-      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo, operatore)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (user_id) DO UPDATE SET
          anthropic_api_key = EXCLUDED.anthropic_api_key,
          tariffe_json = EXCLUDED.tariffe_json,
          emittente_nome = EXCLUDED.emittente_nome,
          emittente_piva = EXCLUDED.emittente_piva,
          emittente_indirizzo = EXCLUDED.emittente_indirizzo,
-         operatore = EXCLUDED.operatore`,
-      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo, newOperatore]
+         operatore = EXCLUDED.operatore,
+         veicolo = EXCLUDED.veicolo,
+         targa = EXCLUDED.targa`,
+      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo, newOperatore, newVeicolo, newTarga]
     );
 
     res.json({ ok: true });

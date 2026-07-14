@@ -82,6 +82,8 @@ async function migrate() {
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_piva TEXT DEFAULT '';
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_indirizzo TEXT DEFAULT '';
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS operatore TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS veicolo TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS targa TEXT DEFAULT '';
     `);
 
     await client.query('COMMIT');
