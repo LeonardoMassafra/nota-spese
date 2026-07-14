@@ -255,7 +255,7 @@ input:focus, select:focus { border-color: #D85A30; }
 /* ── Summary cards ── */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -482,10 +482,14 @@ input:focus, select:focus { border-color: #D85A30; }
 /* ── Responsive ── */
 @media (max-width: 480px) {
   .summary-grid { grid-template-columns: 1fr 1fr; }
-  .summary-grid .summary-card:last-child { grid-column: span 2; }
+  .summary-grid .summary-card:last-child:nth-child(odd) { grid-column: span 2; }
   .grid-2 { grid-template-columns: 1fr; }
   .container { padding: 16px 14px 80px; }
 }
+
+/* ── Azioni form (salva / annulla affiancati) ── */
+.form-actions { display: flex; gap: 10px; margin-top: 16px; }
+.form-actions .btn { width: auto; flex: 1; margin-top: 0; }
 
 /* ── Documento (Nota Spese stampabile) ── */
 .doc-controls {

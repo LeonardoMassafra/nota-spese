@@ -206,6 +206,32 @@ router.post('/:id/foto', requireAuth, upload.single('photo'), async (req, res) =
   }
 });
 
+// PUT: modifica una spesa esistente (non tocca la foto)
+router.put('/:id', requireAuth, async (req, res) => {
+  const { commessa_id, data, importo, fornitore, categoria, note, pagamento } = req.body;
+  if (!commessa_id || !data || !importo || !fornitore || !categoria) {
+    return res.status(400).json({ error: 'Campi obbligatori mancanti' });
+  }
+  try {
+    const own = await pool.query('SELECT id FROM spese WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (own.rows.length === 0) return res.status(404).json({ error: 'Spesa non trovata' });
+
+    const check = await pool.query('SELECT id FROM commesse WHERE id = $1 AND user_id = $2', [commessa_id, req.user.id]);
+    if (check.rows.length === 0) return res.status(400).json({ error: 'Commessa non valida' });
+
+    const { rows } = await pool.query(
+      `UPDATE spese SET commessa_id = $1, data = $2, importo = $3, fornitore = $4, categoria = $5, note = $6, pagamento = $7
+       WHERE id = $8 AND user_id = $9
+       RETURNING id, user_id, commessa_id, data, importo, fornitore, categoria, note, pagamento, foto_filename, created_at`,
+      [commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), (pagamento || '').trim(), req.params.id, req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+
 // DELETE spesa
 router.delete('/:id', requireAuth, async (req, res) => {
   try {

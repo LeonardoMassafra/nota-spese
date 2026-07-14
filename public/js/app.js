@@ -61,8 +61,10 @@ const state = {
   spesaPreview: null,    // data URL per anteprima
   spesaScanning: false,
   spesaDebug: null,
+  editSpesaId: null,     // id spesa in modifica (null = nuova)
 
   trasForm: { data: today(), tariffa: 0.3936, partenza: '', destinazione: '', km: '', pedaggio: '', pagamento: '', note: '', commessa_id: '' },
+  editTrasfertaId: null, // id trasferta in modifica (null = nuova)
 
   settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})),
                   emittente_nome: '', emittente_piva: '', emittente_indirizzo: '' },
@@ -213,15 +215,17 @@ function renderSpesa() {
     debugHtml = `<div class="debug-box ${cls}"><div class="debug-title">${esc(spesaDebug.title)}</div><div>${esc(spesaDebug.msg)}</div></div>`;
   }
 
+  const editing = !!state.editSpesaId;
   return `
     <div class="card">
-      <div class="section-label">Aggiungi spesa</div>
+      <div class="section-label">${editing ? 'Modifica spesa' : 'Aggiungi spesa'}</div>
 
+      ${editing ? '' : `
       <div class="upload-zone ${spesaScanning?'scanning':spesaPreview?'has-preview':''}" id="uploadZone">
         ${uploadContent}
         <input type="file" id="photoInput" accept="image/*" style="display:none">
       </div>
-      ${debugHtml}
+      ${debugHtml}`}
 
       <div class="form-group">
         <label>Commessa</label>
@@ -260,7 +264,10 @@ function renderSpesa() {
         <label>Note (opzionale)</label>
         <input id="sNote" value="${esc(spesaForm.note)}" placeholder="Breve descrizione...">
       </div>
-      <button class="btn btn-primary" id="addSpesaBtn">Salva spesa</button>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="addSpesaBtn">${editing ? 'Salva modifiche' : 'Salva spesa'}</button>
+        ${editing ? '<button class="btn btn-outline" id="cancelEditSpesaBtn">Annulla</button>' : ''}
+      </div>
     </div>
   `;
 }
@@ -276,9 +283,10 @@ function renderTrasferta() {
   const kmNum = parseFloat(trasForm.km) || 0;
   const rimborso = kmNum * parseFloat(trasForm.tariffa);
 
+  const editing = !!state.editTrasfertaId;
   return `
     <div class="card">
-      <div class="section-label">Nuova trasferta</div>
+      <div class="section-label">${editing ? 'Modifica trasferta' : 'Nuova trasferta'}</div>
       <div class="form-group" style="margin-top:0">
         <label>Commessa</label>
         <select id="tCommessa">${commOpts}</select>
@@ -330,7 +338,10 @@ function renderTrasferta() {
         <label>Note (opzionale)</label>
         <input id="tNote" value="${esc(trasForm.note)}" placeholder="Es. Sopralluogo cantiere">
       </div>
-      <button class="btn btn-primary" id="addTrasferaBtn">Salva trasferta</button>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="addTrasferaBtn">${editing ? 'Salva modifiche' : 'Salva trasferta'}</button>
+        ${editing ? '<button class="btn btn-outline" id="cancelEditTrasferaBtn">Annulla</button>' : ''}
+      </div>
     </div>
   `;
 }
@@ -357,6 +368,8 @@ function renderRiepilogo() {
   const { spFilt, trFilt } = filteredItems();
   const totSp = spFilt.reduce((a,s) => a+pf(s.importo), 0);
   const totKm = trFilt.reduce((a,t) => a+pf(t.rimborso), 0);
+  const totPed = trFilt.reduce((a,t) => a+pf(t.pedaggio), 0);
+  const totGen = totSp + totKm + totPed;
 
   const allItems = [
     ...spFilt.map(s => {
@@ -367,8 +380,10 @@ function renderRiepilogo() {
     }),
     ...trFilt.map(t => {
       const c = commesse.find(x => x.id === t.commessa_id);
+      const ped = pf(t.pedaggio);
       return { id:t.id, tipo:'km', data:t.data, name:`${t.partenza} → ${t.destinazione}`,
-               meta:`${dateIt(t.data)} · ${t.km} km · ${c?.nome||'—'}`, val:t.rimborso };
+               meta:`${dateIt(t.data)} · ${t.km} km${ped>0?' · pedaggio '+fmt(ped):''} · ${c?.nome||'—'}`,
+               val:pf(t.rimborso)+ped };
     }),
   ].sort((a,b) => new Date(b.data) - new Date(a.data));
 
@@ -394,9 +409,14 @@ function renderRiepilogo() {
         <div class="summary-label">Rimborso km</div>
         <div class="summary-val">${fmt(totKm)}</div>
       </div>
+      ${totPed > 0 ? `
+      <div class="summary-card">
+        <div class="summary-label">Pedaggi</div>
+        <div class="summary-val">${fmt(totPed)}</div>
+      </div>` : ''}
       <div class="summary-card">
         <div class="summary-label">Totale rimborsi</div>
-        <div class="summary-val">${fmt(totSp+totKm)}</div>
+        <div class="summary-val">${fmt(totGen)}</div>
       </div>
     </div>
 
@@ -421,7 +441,8 @@ function renderRiepilogo() {
                   ? `<button class="btn-icon item-foto-attach" data-action="attach-foto" data-id="${item.id}" title="Allega scontrino dal telefono">📎</button>`
                   : '')}
             <div class="item-val">${fmt(item.val)}</div>
-            <button class="btn-icon" data-action="${item.tipo==='spesa'?'del-spesa':'del-trasferta'}" data-id="${item.id}">×</button>
+            <button class="btn-icon" data-action="${item.tipo==='spesa'?'edit-spesa':'edit-trasferta'}" data-id="${item.id}" title="Modifica">✎</button>
+            <button class="btn-icon" data-action="${item.tipo==='spesa'?'del-spesa':'del-trasferta'}" data-id="${item.id}" title="Elimina">×</button>
           </div>`).join('')
       }
     </div>
@@ -689,6 +710,8 @@ function handleDelegatedClick(e) {
   if (action === 'del-commessa') deleteCommessa(parseInt(id));
   if (action === 'del-spesa') deleteSpesa(parseInt(id));
   if (action === 'del-trasferta') deleteTrasferta(parseInt(id));
+  if (action === 'edit-spesa') startEditSpesa(parseInt(id));
+  if (action === 'edit-trasferta') startEditTrasferta(parseInt(id));
   if (action === 'attach-foto') attachFotoToSpesa(parseInt(id));
 }
 
@@ -759,14 +782,17 @@ async function deleteCommessa(id) {
 // ── Spesa listeners ────────────────────────────────────────────────────────────
 
 function attachSpesaListeners() {
+  // Bind della zona foto solo se presente (in modifica è nascosta)
   const zone = document.getElementById('uploadZone');
-  if (!zone) return;
+  if (zone) {
+    zone.addEventListener('click', () => {
+      if (!state.spesaScanning) document.getElementById('photoInput')?.click();
+    });
+    document.getElementById('photoInput')?.addEventListener('change', handleImageSelect);
+  }
 
-  zone.addEventListener('click', () => {
-    if (!state.spesaScanning) document.getElementById('photoInput')?.click();
-  });
-
-  document.getElementById('photoInput')?.addEventListener('change', handleImageSelect);
+  // I campi del form spesa esistono solo quando il tab spesa è attivo
+  if (!document.getElementById('addSpesaBtn')) return;
 
   const fields = { sCommessa:'commessa_id', sData:'data', sImporto:'importo',
                    sFornitore:'fornitore', sCategoria:'categoria', sPagamento:'pagamento', sNote:'note' };
@@ -781,6 +807,7 @@ function attachSpesaListeners() {
   });
 
   document.getElementById('addSpesaBtn')?.addEventListener('click', addSpesa);
+  document.getElementById('cancelEditSpesaBtn')?.addEventListener('click', cancelEditSpesa);
 }
 
 async function handleImageSelect(e) {
@@ -847,6 +874,20 @@ async function addSpesa() {
   if (!commessa_id) { showToast('Crea prima una commessa', 'err'); return; }
 
   try {
+    if (state.editSpesaId) {
+      const upd = await apiCall('PUT', `/api/spese/${state.editSpesaId}`, {
+        commessa_id, data, importo, fornitore, categoria, pagamento, note,
+      });
+      const idx = state.spese.findIndex(s => s.id === state.editSpesaId);
+      if (idx !== -1) state.spese[idx] = { ...state.spese[idx], ...upd };
+      state.editSpesaId = null;
+      state.spesaForm = { data:today(), importo:'', fornitore:'', categoria:'Altro', note:'', pagamento:'', commessa_id };
+      showToast('Spesa aggiornata!');
+      state.tab = 'riepilogo';
+      render();
+      return;
+    }
+
     const nuova = await apiCall('POST', '/api/spese', {
       commessa_id, data, importo, fornitore, categoria, pagamento, note,
       foto_filename: state.spesaFoto,
@@ -869,6 +910,26 @@ async function deleteSpesa(id) {
     showToast('Spesa eliminata');
     render();
   } catch(err) { showToast(err.message, 'err'); }
+}
+
+function startEditSpesa(id) {
+  const s = state.spese.find(x => x.id === id);
+  if (!s) return;
+  state.editSpesaId = id;
+  state.spesaForm = {
+    data: s.data, importo: String(s.importo), fornitore: s.fornitore, categoria: s.categoria,
+    note: s.note || '', pagamento: s.pagamento || '', commessa_id: s.commessa_id,
+  };
+  state.spesaFoto = null; state.spesaPreview = null; state.spesaScanning = false; state.spesaDebug = null;
+  state.tab = 'spesa';
+  render();
+}
+
+function cancelEditSpesa() {
+  state.editSpesaId = null;
+  state.spesaForm = { data:today(), importo:'', fornitore:'', categoria:'Altro', note:'', pagamento:'', commessa_id: state.commesse[0]?.id || '' };
+  state.tab = 'riepilogo';
+  render();
 }
 
 // ── Trasferta listeners ────────────────────────────────────────────────────────
@@ -913,6 +974,7 @@ function attachTrasferaListeners() {
   });
 
   document.getElementById('addTrasferaBtn')?.addEventListener('click', addTrasferta);
+  document.getElementById('cancelEditTrasferaBtn')?.addEventListener('click', cancelEditTrasferta);
 }
 
 async function addTrasferta() {
@@ -933,6 +995,18 @@ async function addTrasferta() {
   if (!commessa_id) { showToast('Crea prima una commessa', 'err'); return; }
 
   try {
+    if (state.editTrasfertaId) {
+      const upd = await apiCall('PUT', `/api/trasferte/${state.editTrasfertaId}`, { commessa_id, data, partenza, destinazione, km, tariffa, pedaggio, pagamento, note });
+      const idx = state.trasferte.findIndex(t => t.id === state.editTrasfertaId);
+      if (idx !== -1) state.trasferte[idx] = { ...state.trasferte[idx], ...upd };
+      state.editTrasfertaId = null;
+      state.trasForm = { ...state.trasForm, km:'', partenza:'', destinazione:'', pedaggio:'', pagamento:'', note:'', commessa_id };
+      showToast('Trasferta aggiornata!');
+      state.tab = 'riepilogo';
+      render();
+      return;
+    }
+
     const nuova = await apiCall('POST', '/api/trasferte', { commessa_id, data, partenza, destinazione, km, tariffa, pedaggio, pagamento, note });
     state.trasferte.unshift(nuova);
     state.trasForm = { ...state.trasForm, km:'', partenza:'', destinazione:'', pedaggio:'', note:'', commessa_id };
@@ -949,6 +1023,26 @@ async function deleteTrasferta(id) {
     showToast('Trasferta eliminata');
     render();
   } catch(err) { showToast(err.message, 'err'); }
+}
+
+function startEditTrasferta(id) {
+  const t = state.trasferte.find(x => x.id === id);
+  if (!t) return;
+  state.editTrasfertaId = id;
+  state.trasForm = {
+    data: t.data, tariffa: parseFloat(t.tariffa), partenza: t.partenza, destinazione: t.destinazione,
+    km: String(t.km), pedaggio: pf(t.pedaggio) ? String(t.pedaggio) : '', pagamento: t.pagamento || '',
+    note: t.note || '', commessa_id: t.commessa_id,
+  };
+  state.tab = 'trasferta';
+  render();
+}
+
+function cancelEditTrasferta() {
+  state.editTrasfertaId = null;
+  state.trasForm = { ...state.trasForm, km:'', partenza:'', destinazione:'', pedaggio:'', pagamento:'', note:'', commessa_id: state.commesse[0]?.id || '' };
+  state.tab = 'riepilogo';
+  render();
 }
 
 // ── Riepilogo listeners ────────────────────────────────────────────────────────

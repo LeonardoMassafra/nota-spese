@@ -51,6 +51,36 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// PUT: modifica una trasferta esistente (ricalcola il rimborso)
+router.put('/:id', requireAuth, async (req, res) => {
+  const { commessa_id, data, partenza, destinazione, km, tariffa, note, pedaggio, pagamento } = req.body;
+  if (!commessa_id || !data || !partenza || !destinazione || !km || !tariffa) {
+    return res.status(400).json({ error: 'Campi obbligatori mancanti' });
+  }
+  try {
+    const own = await pool.query('SELECT id FROM trasferte WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (own.rows.length === 0) return res.status(404).json({ error: 'Trasferta non trovata' });
+
+    const check = await pool.query('SELECT id FROM commesse WHERE id = $1 AND user_id = $2', [commessa_id, req.user.id]);
+    if (check.rows.length === 0) return res.status(400).json({ error: 'Commessa non valida' });
+
+    const kmNum = parseFloat(km);
+    const tariffaNum = parseFloat(tariffa);
+    const rimborso = Math.round(kmNum * tariffaNum * 100) / 100;
+    const pedaggioNum = Math.round((parseFloat(pedaggio) || 0) * 100) / 100;
+
+    const { rows } = await pool.query(
+      `UPDATE trasferte SET commessa_id = $1, data = $2, partenza = $3, destinazione = $4, km = $5, tariffa = $6, rimborso = $7, note = $8, pedaggio = $9, pagamento = $10
+       WHERE id = $11 AND user_id = $12 RETURNING *`,
+      [commessa_id, data, partenza.trim(), destinazione.trim(), kmNum, tariffaNum, rimborso, (note || '').trim(), pedaggioNum, (pagamento || '').trim(), req.params.id, req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const check = await pool.query(
