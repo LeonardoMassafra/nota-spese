@@ -37,6 +37,7 @@ router.get('/', requireAuth, async (req, res) => {
       emittente_nome: settings?.emittente_nome || '',
       emittente_piva: settings?.emittente_piva || '',
       emittente_indirizzo: settings?.emittente_indirizzo || '',
+      operatore: settings?.operatore || '',
     });
   } catch (err) {
     console.error(err);
@@ -45,7 +46,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.put('/', requireAuth, async (req, res) => {
-  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo } = req.body;
+  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo, operatore } = req.body;
 
   try {
     const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
@@ -67,17 +68,19 @@ router.put('/', requireAuth, async (req, res) => {
     const newNome = emittente_nome !== undefined ? String(emittente_nome).trim() : (current?.emittente_nome || '');
     const newPiva = emittente_piva !== undefined ? String(emittente_piva).trim() : (current?.emittente_piva || '');
     const newIndirizzo = emittente_indirizzo !== undefined ? String(emittente_indirizzo).trim() : (current?.emittente_indirizzo || '');
+    const newOperatore = operatore !== undefined ? String(operatore).trim() : (current?.operatore || '');
 
     await pool.query(
-      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo, operatore)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (user_id) DO UPDATE SET
          anthropic_api_key = EXCLUDED.anthropic_api_key,
          tariffe_json = EXCLUDED.tariffe_json,
          emittente_nome = EXCLUDED.emittente_nome,
          emittente_piva = EXCLUDED.emittente_piva,
-         emittente_indirizzo = EXCLUDED.emittente_indirizzo`,
-      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo]
+         emittente_indirizzo = EXCLUDED.emittente_indirizzo,
+         operatore = EXCLUDED.operatore`,
+      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo, newOperatore]
     );
 
     res.json({ ok: true });

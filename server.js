@@ -17,6 +17,7 @@ pool.query(`
   ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_nome TEXT DEFAULT '';
   ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_piva TEXT DEFAULT '';
   ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_indirizzo TEXT DEFAULT '';
+  ALTER TABLE settings ADD COLUMN IF NOT EXISTS operatore TEXT DEFAULT '';
 `).catch(err => console.error('Auto-migrazione schema:', err.message));
 
 // Session store con PostgreSQL

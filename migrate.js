@@ -76,11 +76,12 @@ async function migrate() {
       ALTER TABLE trasferte ADD COLUMN IF NOT EXISTS pagamento TEXT DEFAULT '';
     `);
 
-    // Anagrafica emittente per l'intestazione del documento "Nota Spese"
+    // Anagrafica emittente + operatore per l'intestazione del documento "Nota Spese"
     await client.query(`
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_nome TEXT DEFAULT '';
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_piva TEXT DEFAULT '';
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_indirizzo TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS operatore TEXT DEFAULT '';
     `);
 
     await client.query('COMMIT');

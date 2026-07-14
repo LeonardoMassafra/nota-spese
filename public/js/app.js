@@ -67,7 +67,7 @@ const state = {
   editTrasfertaId: null, // id trasferta in modifica (null = nuova)
 
   settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})),
-                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '' },
+                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '', operatore: '' },
 
   toastTimer: null,
 };
@@ -503,6 +503,7 @@ function renderDocumento() {
   const nome = settings.emittente_nome || '';
   const piva = settings.emittente_piva || '';
   const indir = settings.emittente_indirizzo || '';
+  const operatore = settings.operatore || '';
   const oggi = new Date().toLocaleDateString('it-IT');
 
   return `
@@ -527,6 +528,11 @@ function renderDocumento() {
           <div class="doc-title-per">${esc(periodo)}</div>
           <div class="doc-title-gen">Emesso il ${oggi}</div>
         </div>
+      </div>
+
+      <div class="doc-operatore">
+        <span class="doc-op-label">Rimborso spettante a</span>
+        <span class="doc-op-nome">${esc(operatore) || '________________________'}</span>
       </div>
 
       ${rows.length === 0
@@ -563,8 +569,9 @@ function renderDocumento() {
           <div class="doc-sign-label">Luogo e data</div>
         </div>
         <div class="doc-sign-col">
+          ${operatore ? `<div class="doc-sign-name">${esc(operatore)}</div>` : ''}
           <div class="doc-sign-line"></div>
-          <div class="doc-sign-label">Firma</div>
+          <div class="doc-sign-label">Firma dell'operatore</div>
         </div>
       </div>
 
@@ -596,6 +603,10 @@ function renderImpostazioni() {
           <label>Indirizzo</label>
           <input id="emIndirizzo" value="${esc(settingsForm.emittente_indirizzo)}" placeholder="Es. Via Ormaneto 26, Bovolone (VR)">
         </div>
+      </div>
+      <div class="form-group">
+        <label>Operatore (a chi spetta il rimborso)</label>
+        <input id="emOperatore" value="${esc(settingsForm.operatore)}" placeholder="Es. Geom. Leonardo Massafra">
       </div>
       <button class="btn btn-primary" id="saveAnagraficaBtn">Salva intestazione</button>
     </div>
@@ -1101,7 +1112,7 @@ function attachImpostazioniListeners() {
   });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', saveSettings);
 
-  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo' };
+  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo', emOperatore:'operatore' };
   Object.entries(emFields).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', e => { state.settingsForm[key] = e.target.value; });
   });
@@ -1112,13 +1123,15 @@ async function saveAnagrafica() {
   const emittente_nome      = document.getElementById('emNome')?.value      ?? state.settingsForm.emittente_nome;
   const emittente_piva      = document.getElementById('emPiva')?.value      ?? state.settingsForm.emittente_piva;
   const emittente_indirizzo = document.getElementById('emIndirizzo')?.value ?? state.settingsForm.emittente_indirizzo;
+  const operatore           = document.getElementById('emOperatore')?.value ?? state.settingsForm.operatore;
   try {
-    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo });
+    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo, operatore });
     const s = await fetch('/api/settings').then(r => r.json());
     state.settings = s;
     state.settingsForm.emittente_nome = s.emittente_nome || '';
     state.settingsForm.emittente_piva = s.emittente_piva || '';
     state.settingsForm.emittente_indirizzo = s.emittente_indirizzo || '';
+    state.settingsForm.operatore = s.operatore || '';
     showToast('Intestazione salvata!');
     render();
   } catch(err) { showToast(err.message, 'err'); }
@@ -1177,6 +1190,7 @@ async function init() {
     state.settingsForm.emittente_nome = settings.emittente_nome || '';
     state.settingsForm.emittente_piva = settings.emittente_piva || '';
     state.settingsForm.emittente_indirizzo = settings.emittente_indirizzo || '';
+    state.settingsForm.operatore = settings.operatore || '';
 
     // Tariffa di default: Benzina 1001-1600cc (indice 1)
     state.trasForm.tariffa = state.tariffe[1]?.val ?? state.tariffe[0]?.val ?? 0.3936;
