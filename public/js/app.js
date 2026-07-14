@@ -464,6 +464,8 @@ function documentoDati() {
 
   const sp = spese.filter(s => inPeriodo(s.data));
   const tr = trasferte.filter(t => inPeriodo(t.data));
+  // Risale alla categoria ACI (es. "Diesel ≤1600cc") dal valore €/km salvato sulla trasferta
+  const catTariffa = val => (state.tariffe.find(x => Math.abs(pf(x.val) - pf(val)) < 1e-6)?.label) || '';
 
   const rows = [];
   sp.forEach(s => rows.push({
@@ -472,9 +474,11 @@ function documentoDati() {
     importo: pf(s.importo), cls: 'row-sp',
   }));
   tr.forEach(t => {
+    const cat = catTariffa(t.tariffa);
     rows.push({
       data: t.data, tipo: 'Trasferta', descrizione: `${t.partenza} → ${t.destinazione}`,
-      commessa: commNome(t.commessa_id), dettaglio: `${pf(t.km)} km × €${pf(t.tariffa).toFixed(4)}/km`,
+      commessa: commNome(t.commessa_id),
+      dettaglio: `${pf(t.km)} km × €${pf(t.tariffa).toFixed(4)}/km${cat ? ' · ' + cat : ''}`,
       pagamento: '—', importo: pf(t.rimborso), cls: 'row-km',
     });
     if (pf(t.pedaggio) > 0) rows.push({
