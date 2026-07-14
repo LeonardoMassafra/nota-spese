@@ -16,8 +16,8 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.post('/', requireAuth, async (req, res) => {
-  const { commessa_id, data, partenza, destinazione, km, tariffa, note } = req.body;
-  console.log('[POST /api/trasferte] body ricevuto:', { commessa_id, data, partenza, destinazione, km, tariffa, note });
+  const { commessa_id, data, partenza, destinazione, km, tariffa, note, pedaggio, pagamento } = req.body;
+  console.log('[POST /api/trasferte] body ricevuto:', { commessa_id, data, partenza, destinazione, km, tariffa, note, pedaggio, pagamento });
 
   if (!commessa_id || !data || !partenza || !destinazione || !km || !tariffa) {
     console.error('[POST /api/trasferte] Campi mancanti:', { commessa_id, data, partenza, destinazione, km, tariffa });
@@ -37,10 +37,11 @@ router.post('/', requireAuth, async (req, res) => {
     const kmNum = parseFloat(km);
     const tariffaNum = parseFloat(tariffa);
     const rimborso = Math.round(kmNum * tariffaNum * 100) / 100;
+    const pedaggioNum = Math.round((parseFloat(pedaggio) || 0) * 100) / 100;
 
     const { rows } = await pool.query(
-      'INSERT INTO trasferte (user_id, commessa_id, data, partenza, destinazione, km, tariffa, rimborso, note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [req.user.id, commessa_id, data, partenza.trim(), destinazione.trim(), kmNum, tariffaNum, rimborso, (note || '').trim()]
+      'INSERT INTO trasferte (user_id, commessa_id, data, partenza, destinazione, km, tariffa, rimborso, note, pedaggio, pagamento) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      [req.user.id, commessa_id, data, partenza.trim(), destinazione.trim(), kmNum, tariffaNum, rimborso, (note || '').trim(), pedaggioNum, (pagamento || '').trim()]
     );
     console.log('[POST /api/trasferte] Salvata con id:', rows[0]?.id);
     res.json(rows[0]);

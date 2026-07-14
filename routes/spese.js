@@ -48,7 +48,7 @@ Categorie valide: Carburante, Vitto, Alloggio, Trasporti, Pedaggi, Materiali, Pr
 router.get('/', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, created_at FROM spese WHERE user_id = $1 ORDER BY data DESC, created_at DESC',
+      'SELECT id, user_id, commessa_id, data, importo, fornitore, categoria, note, pagamento, foto_filename, created_at FROM spese WHERE user_id = $1 ORDER BY data DESC, created_at DESC',
       [req.user.id]
     );
     res.json(rows);
@@ -126,7 +126,7 @@ router.post('/analyze', requireAuth, upload.single('photo'), async (req, res) =>
 
 // POST create spesa
 router.post('/', requireAuth, async (req, res) => {
-  const { commessa_id, data, importo, fornitore, categoria, note, foto_filename } = req.body;
+  const { commessa_id, data, importo, fornitore, categoria, note, pagamento, foto_filename } = req.body;
   if (!commessa_id || !data || !importo || !fornitore || !categoria) {
     return res.status(400).json({ error: 'Campi obbligatori mancanti' });
   }
@@ -151,10 +151,10 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, foto_data, foto_mime)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, user_id, commessa_id, data, importo, fornitore, categoria, note, foto_filename, created_at`,
-      [req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), foto_filename || null, fotoData, fotoMime]
+      `INSERT INTO spese (user_id, commessa_id, data, importo, fornitore, categoria, note, pagamento, foto_filename, foto_data, foto_mime)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, user_id, commessa_id, data, importo, fornitore, categoria, note, pagamento, foto_filename, created_at`,
+      [req.user.id, commessa_id, data, parseFloat(importo), fornitore.trim(), categoria, (note || '').trim(), (pagamento || '').trim(), foto_filename || null, fotoData, fotoMime]
     );
     res.json(rows[0]);
   } catch (err) {

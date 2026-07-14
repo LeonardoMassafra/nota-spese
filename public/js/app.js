@@ -4,6 +4,7 @@ const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
               "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const CATEGORIE = ["Carburante","Vitto","Alloggio","Trasporti","Pedaggi",
                    "Materiali","Pratiche","Telefonia","Attrezzatura","Cancelleria","Altro"];
+const PAGAMENTI = ["Contanti","Carta aziendale","Carta personale"];
 // Valori di default (usati finché il server non risponde o se l'utente non ha personalizzato)
 const DEFAULT_TARIFFE = [
   { id:'b_1000',  label:'Benzina ≤1000cc',      val:0.2837 },
@@ -55,15 +56,16 @@ const state = {
 
   commForm: { nome: '', cliente: '', indirizzo: '' },
 
-  spesaForm: { data: today(), importo: '', fornitore: '', categoria: 'Altro', note: '', commessa_id: '' },
+  spesaForm: { data: today(), importo: '', fornitore: '', categoria: 'Altro', note: '', pagamento: '', commessa_id: '' },
   spesaFoto: null,       // filename restituito da /api/spese/analyze
   spesaPreview: null,    // data URL per anteprima
   spesaScanning: false,
   spesaDebug: null,
 
-  trasForm: { data: today(), tariffa: 0.3936, partenza: '', destinazione: '', km: '', note: '', commessa_id: '' },
+  trasForm: { data: today(), tariffa: 0.3936, partenza: '', destinazione: '', km: '', pedaggio: '', pagamento: '', note: '', commessa_id: '' },
 
-  settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})) },
+  settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})),
+                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '' },
 
   toastTimer: null,
 };
@@ -110,10 +112,10 @@ function renderApp() {
       </header>
 
       <nav class="tabs">
-        ${['commesse','spesa','trasferta','riepilogo','impostazioni'].map(id => `
+        ${['commesse','spesa','trasferta','riepilogo','documento','impostazioni'].map(id => `
           <button class="tab-btn ${state.tab===id?'active':''}" data-tab="${id}">
             ${{commesse:'Commesse',spesa:'Nuova spesa',trasferta:'Trasferta',
-               riepilogo:`Riepilogo${count>0?' ('+count+')':''}`,impostazioni:'Impostazioni'}[id]}
+               riepilogo:`Riepilogo${count>0?' ('+count+')':''}`,documento:'Documento',impostazioni:'Impostazioni'}[id]}
           </button>`).join('')}
       </nav>
 
@@ -122,6 +124,7 @@ function renderApp() {
         ${state.tab==='spesa'       ? renderSpesa()       : ''}
         ${state.tab==='trasferta'   ? renderTrasferta()   : ''}
         ${state.tab==='riepilogo'   ? renderRiepilogo()   : ''}
+        ${state.tab==='documento'   ? renderDocumento()   : ''}
         ${state.tab==='impostazioni'? renderImpostazioni(): ''}
       </main>
     </div>
@@ -238,11 +241,20 @@ function renderSpesa() {
         <label>Fornitore</label>
         <input id="sFornitore" value="${esc(spesaForm.fornitore)}" placeholder="Es. Autostrada BS-VR, Eni, Autogrill...">
       </div>
-      <div class="form-group">
-        <label>Categoria</label>
-        <select id="sCategoria">
-          ${CATEGORIE.map(c => `<option ${spesaForm.categoria===c?'selected':''}>${c}</option>`).join('')}
-        </select>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Categoria</label>
+          <select id="sCategoria">
+            ${CATEGORIE.map(c => `<option ${spesaForm.categoria===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Pagamento</label>
+          <select id="sPagamento">
+            <option value="" ${!spesaForm.pagamento?'selected':''}>— non indicato</option>
+            ${PAGAMENTI.map(p => `<option ${spesaForm.pagamento===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="form-group">
         <label>Note (opzionale)</label>
@@ -301,6 +313,19 @@ function renderTrasferta() {
           <div class="rimborso-val">${fmt(rimborso)}</div>
           <div class="rimborso-sub">${trasForm.km} km × €${parseFloat(trasForm.tariffa).toFixed(4)}/km (tariffario ACI)</div>
         </div>` : ''}
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Pedaggio autostradale € (opzionale)</label>
+          <input type="number" step="0.01" min="0" id="tPedaggio" value="${esc(trasForm.pedaggio)}" placeholder="Es. 14.50">
+        </div>
+        <div class="form-group">
+          <label>Pagamento pedaggio</label>
+          <select id="tPagamento">
+            <option value="" ${!trasForm.pagamento?'selected':''}>— non indicato</option>
+            ${PAGAMENTI.map(p => `<option ${trasForm.pagamento===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+      </div>
       <div class="form-group">
         <label>Note (opzionale)</label>
         <input id="tNote" value="${esc(trasForm.note)}" placeholder="Es. Sopralluogo cantiere">
@@ -403,11 +428,153 @@ function renderRiepilogo() {
   `;
 }
 
+// ── Tab: Documento ─────────────────────────────────────────────────────────────
+
+// Costruisce le righe unificate del documento (spese + trasferte + pedaggi come riga propria),
+// in ordine cronologico, per il periodo selezionato (anno + mese). Ignora il filtro commessa:
+// il documento riepiloga sempre tutte le commesse del periodo.
+function documentoDati() {
+  const { spese, trasferte, commesse, anno, mese } = state;
+  const inPeriodo = d => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.getFullYear() === anno && (mese === -1 || dt.getMonth() === mese);
+  };
+  const commNome = id => commesse.find(c => c.id === id)?.nome || '—';
+
+  const sp = spese.filter(s => inPeriodo(s.data));
+  const tr = trasferte.filter(t => inPeriodo(t.data));
+
+  const rows = [];
+  sp.forEach(s => rows.push({
+    data: s.data, tipo: 'Spesa', descrizione: s.fornitore, commessa: commNome(s.commessa_id),
+    dettaglio: s.categoria + (s.note ? ' · ' + s.note : ''), pagamento: s.pagamento || '',
+    importo: pf(s.importo), cls: 'row-sp',
+  }));
+  tr.forEach(t => {
+    rows.push({
+      data: t.data, tipo: 'Trasferta', descrizione: `${t.partenza} → ${t.destinazione}`,
+      commessa: commNome(t.commessa_id), dettaglio: `${pf(t.km)} km × €${pf(t.tariffa).toFixed(4)}/km`,
+      pagamento: '—', importo: pf(t.rimborso), cls: 'row-km',
+    });
+    if (pf(t.pedaggio) > 0) rows.push({
+      data: t.data, tipo: 'Pedaggio', descrizione: `Pedaggio autostradale — ${t.partenza} → ${t.destinazione}`,
+      commessa: commNome(t.commessa_id), dettaglio: 'Casello autostradale', pagamento: t.pagamento || '',
+      importo: pf(t.pedaggio), cls: 'row-ped',
+    });
+  });
+  // Sort stabile per data: a parità di giorno la trasferta resta seguita dal suo pedaggio
+  rows.sort((a, b) => new Date(a.data) - new Date(b.data));
+
+  const totKm = tr.reduce((a, t) => a + pf(t.rimborso), 0);
+  const totPed = tr.reduce((a, t) => a + pf(t.pedaggio), 0);
+  const totSp = sp.reduce((a, s) => a + pf(s.importo), 0);
+  return { rows, totKm, totPed, totSp, totale: totKm + totPed + totSp };
+}
+
+function renderDocumento() {
+  const { anno, mese, settings } = state;
+  const { rows, totKm, totPed, totSp, totale } = documentoDati();
+  const periodo = mese === -1 ? `Anno ${anno}` : `${MESI[mese]} ${anno}`;
+  const nome = settings.emittente_nome || '';
+  const piva = settings.emittente_piva || '';
+  const indir = settings.emittente_indirizzo || '';
+  const oggi = new Date().toLocaleDateString('it-IT');
+
+  return `
+    <div class="doc-controls no-print">
+      <select id="docMeseSel">
+        <option value="-1" ${mese===-1?'selected':''}>Tutto l'anno ${anno}</option>
+        ${MESI.map((m,i) => `<option value="${i}" ${mese===i?'selected':''}>${m} ${anno}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" id="printDocBtn">🖨 Stampa / Salva PDF</button>
+    </div>
+    ${!nome ? `<div class="doc-hint no-print">Compila l'intestazione (nome, P.IVA, indirizzo) in <b>Impostazioni</b> per completare il documento.</div>` : ''}
+
+    <div class="doc-sheet" id="docSheet">
+      <div class="doc-head">
+        <div class="doc-emitt">
+          <div class="doc-emitt-nome">${esc(nome) || 'Nome / Ragione sociale'}</div>
+          ${piva ? `<div class="doc-emitt-line">P.IVA / C.F. ${esc(piva)}</div>` : ''}
+          ${indir ? `<div class="doc-emitt-line">${esc(indir)}</div>` : ''}
+        </div>
+        <div class="doc-title">
+          <div class="doc-title-main">Nota Spese</div>
+          <div class="doc-title-per">${esc(periodo)}</div>
+          <div class="doc-title-gen">Emesso il ${oggi}</div>
+        </div>
+      </div>
+
+      ${rows.length === 0
+        ? `<div class="doc-empty">Nessuna voce registrata per ${esc(periodo)}.</div>`
+        : `<table class="doc-table">
+            <thead><tr>
+              <th>Data</th><th>Tipo</th><th>Descrizione</th><th>Commessa</th>
+              <th>Dettaglio</th><th>Pagamento</th><th class="num">Importo</th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(r => `<tr class="${r.cls}">
+                <td class="nowrap">${dateIt(r.data)}</td>
+                <td><span class="doc-tipo doc-tipo-${r.tipo.toLowerCase()}">${r.tipo}</span></td>
+                <td>${esc(r.descrizione)}</td>
+                <td>${esc(r.commessa)}</td>
+                <td>${esc(r.dettaglio)}</td>
+                <td>${esc(r.pagamento||'')}</td>
+                <td class="num">${fmt(r.importo)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+
+          <div class="doc-totals">
+            <div class="doc-tot-row"><span>Rimborso chilometrico</span><span>${fmt(totKm)}</span></div>
+            ${totPed>0 ? `<div class="doc-tot-row"><span>Pedaggi autostradali</span><span>${fmt(totPed)}</span></div>` : ''}
+            <div class="doc-tot-row"><span>Spese vive</span><span>${fmt(totSp)}</span></div>
+            <div class="doc-tot-row doc-tot-grand"><span>Totale da rimborsare</span><span>${fmt(totale)}</span></div>
+          </div>`
+      }
+
+      <div class="doc-sign">
+        <div class="doc-sign-col">
+          <div class="doc-sign-line"></div>
+          <div class="doc-sign-label">Luogo e data</div>
+        </div>
+        <div class="doc-sign-col">
+          <div class="doc-sign-line"></div>
+          <div class="doc-sign-label">Firma</div>
+        </div>
+      </div>
+
+      <div class="doc-foot">Rimborsi chilometrici calcolati secondo le tariffe ACI vigenti.</div>
+    </div>
+  `;
+}
+
 // ── Tab: Impostazioni ──────────────────────────────────────────────────────────
 
 function renderImpostazioni() {
   const { settings, settingsForm, tariffe } = state;
   return `
+    <div class="card">
+      <div class="section-label">Intestazione documento (chi presenta la nota spese)</div>
+      <p style="font-size:12px;color:#888;margin-bottom:14px;line-height:1.5">
+        Questi dati compaiono in cima al documento "Nota Spese" da consegnare al commercialista. Si compilano una volta sola.
+      </p>
+      <div class="form-group" style="margin-top:0">
+        <label>Nome / Ragione sociale</label>
+        <input id="emNome" value="${esc(settingsForm.emittente_nome)}" placeholder="Es. Global Geo S.n.c. — Geom. Leonardo Massafra">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Partita IVA / C.F.</label>
+          <input id="emPiva" value="${esc(settingsForm.emittente_piva)}" placeholder="Es. 04611370232">
+        </div>
+        <div class="form-group">
+          <label>Indirizzo</label>
+          <input id="emIndirizzo" value="${esc(settingsForm.emittente_indirizzo)}" placeholder="Es. Via Ormaneto 26, Bovolone (VR)">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="saveAnagraficaBtn">Salva intestazione</button>
+    </div>
+
     <div class="card">
       <div class="section-label">API Anthropic (analisi scontrini AI)</div>
       <div class="api-key-status ${settings.has_api_key?'api-key-ok':'api-key-no'}">
@@ -502,7 +669,16 @@ function attachListeners() {
   attachSpesaListeners();
   attachTrasferaListeners();
   attachRiepilogoListeners();
+  attachDocumentoListeners();
   attachImpostazioniListeners();
+}
+
+function attachDocumentoListeners() {
+  document.getElementById('docMeseSel')?.addEventListener('change', e => {
+    state.mese = parseInt(e.target.value);
+    render();
+  });
+  document.getElementById('printDocBtn')?.addEventListener('click', () => window.print());
 }
 
 function handleDelegatedClick(e) {
@@ -593,7 +769,7 @@ function attachSpesaListeners() {
   document.getElementById('photoInput')?.addEventListener('change', handleImageSelect);
 
   const fields = { sCommessa:'commessa_id', sData:'data', sImporto:'importo',
-                   sFornitore:'fornitore', sCategoria:'categoria', sNote:'note' };
+                   sFornitore:'fornitore', sCategoria:'categoria', sPagamento:'pagamento', sNote:'note' };
   Object.entries(fields).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', e => {
       state.spesaForm[key] = e.target.value;
@@ -664,6 +840,7 @@ async function addSpesa() {
   const importo   = document.getElementById('sImporto')?.value   || state.spesaForm.importo;
   const fornitore = document.getElementById('sFornitore')?.value || state.spesaForm.fornitore;
   const categoria = document.getElementById('sCategoria')?.value || state.spesaForm.categoria;
+  const pagamento = document.getElementById('sPagamento')?.value ?? state.spesaForm.pagamento;
   const note      = document.getElementById('sNote')?.value      ?? state.spesaForm.note;
 
   if (!importo || !fornitore) { showToast('Importo e fornitore obbligatori', 'err'); return; }
@@ -671,11 +848,11 @@ async function addSpesa() {
 
   try {
     const nuova = await apiCall('POST', '/api/spese', {
-      commessa_id, data, importo, fornitore, categoria, note,
+      commessa_id, data, importo, fornitore, categoria, pagamento, note,
       foto_filename: state.spesaFoto,
     });
     state.spese.unshift(nuova);
-    state.spesaForm = { data:today(), importo:'', fornitore:'', categoria:'Altro', note:'', commessa_id };
+    state.spesaForm = { data:today(), importo:'', fornitore:'', categoria:'Altro', note:'', pagamento:'', commessa_id };
     state.spesaFoto = null;
     state.spesaPreview = null;
     state.spesaDebug = null;
@@ -700,7 +877,7 @@ function attachTrasferaListeners() {
   if (!document.getElementById('tKm')) return;
 
   const fields = { tCommessa:'commessa_id', tData:'data', tPartenza:'partenza',
-                   tDestinazione:'destinazione', tNote:'note' };
+                   tDestinazione:'destinazione', tPedaggio:'pedaggio', tPagamento:'pagamento', tNote:'note' };
   Object.entries(fields).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', e => { state.trasForm[key] = e.target.value; });
     document.getElementById(id)?.addEventListener('change', e => { state.trasForm[key] = e.target.value; });
@@ -747,6 +924,8 @@ async function addTrasferta() {
   const km           = document.getElementById('tKm')?.value           || state.trasForm.km;
   const partenza     = document.getElementById('tPartenza')?.value     || state.trasForm.partenza;
   const destinazione = document.getElementById('tDestinazione')?.value || state.trasForm.destinazione;
+  const pedaggio     = document.getElementById('tPedaggio')?.value     ?? state.trasForm.pedaggio;
+  const pagamento    = document.getElementById('tPagamento')?.value    ?? state.trasForm.pagamento;
   const note         = document.getElementById('tNote')?.value         ?? state.trasForm.note;
   const tariffa      = state.trasForm.tariffa;
 
@@ -754,9 +933,9 @@ async function addTrasferta() {
   if (!commessa_id) { showToast('Crea prima una commessa', 'err'); return; }
 
   try {
-    const nuova = await apiCall('POST', '/api/trasferte', { commessa_id, data, partenza, destinazione, km, tariffa, note });
+    const nuova = await apiCall('POST', '/api/trasferte', { commessa_id, data, partenza, destinazione, km, tariffa, pedaggio, pagamento, note });
     state.trasferte.unshift(nuova);
-    state.trasForm = { ...state.trasForm, km:'', partenza:'', destinazione:'', note:'', commessa_id };
+    state.trasForm = { ...state.trasForm, km:'', partenza:'', destinazione:'', pedaggio:'', note:'', commessa_id };
     showToast('Trasferta salvata!');
     render();
   } catch(err) { showToast(err.message, 'err'); }
@@ -789,16 +968,24 @@ function attachRiepilogoListeners() {
 function esportaCSV() {
   const { spese, trasferte, commesse, anno, mese } = state;
   const { spFilt, trFilt } = filteredItems();
+  const eur = n => pf(n).toFixed(2).replace('.', ',');
+  const body = [];
+  spFilt.forEach(s => {
+    const c = commesse.find(x => x.id === s.commessa_id);
+    body.push(['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, s.pagamento||'', eur(s.importo), s.note||'']);
+  });
+  trFilt.forEach(t => {
+    const c = commesse.find(x => x.id === t.commessa_id);
+    body.push(['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, '—', eur(t.rimborso), t.note||'']);
+    if (pf(t.pedaggio) > 0) {
+      body.push(['Pedaggio', t.data, `Pedaggio autostradale — ${t.partenza} → ${t.destinazione}`, c?.nome||'—', 'Casello autostradale', t.pagamento||'', eur(t.pedaggio), '']);
+    }
+  });
+  body.sort((a, b) => new Date(a[1]) - new Date(b[1]));
+
   const rows = [
-    ['Tipo','Data','Descrizione','Commessa','Dettaglio','Importo (€)','Note'],
-    ...spFilt.map(s => {
-      const c = commesse.find(x => x.id === s.commessa_id);
-      return ['Spesa', s.data, s.fornitore, c?.nome||'—', s.categoria, pf(s.importo).toFixed(2).replace('.',','), s.note||''];
-    }),
-    ...trFilt.map(t => {
-      const c = commesse.find(x => x.id === t.commessa_id);
-      return ['Trasferta', t.data, `${t.partenza} → ${t.destinazione}`, c?.nome||'—', `${pf(t.km)} km`, pf(t.rimborso).toFixed(2).replace('.',','), t.note||''];
-    }),
+    ['Tipo','Data','Descrizione','Commessa','Dettaglio','Pagamento','Importo (€)','Note'],
+    ...body,
   ].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
 
   const filename = `NoteSpese_${anno}${mese >= 0 ? '_' + MESI[mese] : ''}.csv`;
@@ -815,6 +1002,28 @@ function attachImpostazioniListeners() {
     state.settingsForm.anthropic_api_key = e.target.value;
   });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', saveSettings);
+
+  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo' };
+  Object.entries(emFields).forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener('input', e => { state.settingsForm[key] = e.target.value; });
+  });
+  document.getElementById('saveAnagraficaBtn')?.addEventListener('click', saveAnagrafica);
+}
+
+async function saveAnagrafica() {
+  const emittente_nome      = document.getElementById('emNome')?.value      ?? state.settingsForm.emittente_nome;
+  const emittente_piva      = document.getElementById('emPiva')?.value      ?? state.settingsForm.emittente_piva;
+  const emittente_indirizzo = document.getElementById('emIndirizzo')?.value ?? state.settingsForm.emittente_indirizzo;
+  try {
+    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo });
+    const s = await fetch('/api/settings').then(r => r.json());
+    state.settings = s;
+    state.settingsForm.emittente_nome = s.emittente_nome || '';
+    state.settingsForm.emittente_piva = s.emittente_piva || '';
+    state.settingsForm.emittente_indirizzo = s.emittente_indirizzo || '';
+    showToast('Intestazione salvata!');
+    render();
+  } catch(err) { showToast(err.message, 'err'); }
 }
 
 async function saveSettings() {
@@ -867,6 +1076,9 @@ async function init() {
     state.settings = settings;
     state.tariffe = settings.tariffe || DEFAULT_TARIFFE;
     state.settingsForm.tariffe = state.tariffe.map(t => ({...t}));
+    state.settingsForm.emittente_nome = settings.emittente_nome || '';
+    state.settingsForm.emittente_piva = settings.emittente_piva || '';
+    state.settingsForm.emittente_indirizzo = settings.emittente_indirizzo || '';
 
     // Tariffa di default: Benzina 1001-1600cc (indice 1)
     state.trasForm.tariffa = state.tariffe[1]?.val ?? state.tariffe[0]?.val ?? 0.3936;

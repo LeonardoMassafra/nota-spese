@@ -65,6 +65,24 @@ async function migrate() {
       ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_mime TEXT;
     `);
 
+    // Metodo di pagamento sulle spese (Contanti / Carta aziendale / Carta personale)
+    await client.query(`
+      ALTER TABLE spese ADD COLUMN IF NOT EXISTS pagamento TEXT DEFAULT '';
+    `);
+
+    // Pedaggio autostradale e metodo di pagamento sulle trasferte
+    await client.query(`
+      ALTER TABLE trasferte ADD COLUMN IF NOT EXISTS pedaggio NUMERIC(10,2) DEFAULT 0;
+      ALTER TABLE trasferte ADD COLUMN IF NOT EXISTS pagamento TEXT DEFAULT '';
+    `);
+
+    // Anagrafica emittente per l'intestazione del documento "Nota Spese"
+    await client.query(`
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_nome TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_piva TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_indirizzo TEXT DEFAULT '';
+    `);
+
     await client.query('COMMIT');
     console.log('Migrazione completata con successo.');
   } catch (err) {

@@ -11,7 +11,13 @@ const PORT = process.env.PORT || 3000;
 pool.query(`
   ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_data BYTEA;
   ALTER TABLE spese ADD COLUMN IF NOT EXISTS foto_mime TEXT;
-`).catch(err => console.error('Auto-migrazione foto:', err.message));
+  ALTER TABLE spese ADD COLUMN IF NOT EXISTS pagamento TEXT DEFAULT '';
+  ALTER TABLE trasferte ADD COLUMN IF NOT EXISTS pedaggio NUMERIC(10,2) DEFAULT 0;
+  ALTER TABLE trasferte ADD COLUMN IF NOT EXISTS pagamento TEXT DEFAULT '';
+  ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_nome TEXT DEFAULT '';
+  ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_piva TEXT DEFAULT '';
+  ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_indirizzo TEXT DEFAULT '';
+`).catch(err => console.error('Auto-migrazione schema:', err.message));
 
 // Session store con PostgreSQL
 const PgSession = require('connect-pg-simple')(session);

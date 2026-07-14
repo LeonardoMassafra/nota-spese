@@ -34,6 +34,9 @@ router.get('/', requireAuth, async (req, res) => {
       has_api_key: key.length > 0,
       api_key_preview: key.length > 4 ? '••••••••' + key.slice(-4) : (key.length > 0 ? '••••' : ''),
       tariffe: parseTariffe(settings?.tariffe_json),
+      emittente_nome: settings?.emittente_nome || '',
+      emittente_piva: settings?.emittente_piva || '',
+      emittente_indirizzo: settings?.emittente_indirizzo || '',
     });
   } catch (err) {
     console.error(err);
@@ -42,7 +45,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.put('/', requireAuth, async (req, res) => {
-  const { anthropic_api_key, tariffe } = req.body;
+  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo } = req.body;
 
   try {
     const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
@@ -60,12 +63,21 @@ router.put('/', requireAuth, async (req, res) => {
       newTariffeJson = JSON.stringify(validated);
     }
 
+    // Anagrafica emittente: se il campo non arriva nel body si mantiene quello attuale
+    const newNome = emittente_nome !== undefined ? String(emittente_nome).trim() : (current?.emittente_nome || '');
+    const newPiva = emittente_piva !== undefined ? String(emittente_piva).trim() : (current?.emittente_piva || '');
+    const newIndirizzo = emittente_indirizzo !== undefined ? String(emittente_indirizzo).trim() : (current?.emittente_indirizzo || '');
+
     await pool.query(
-      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json) VALUES ($1, $2, $3)
+      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (user_id) DO UPDATE SET
          anthropic_api_key = EXCLUDED.anthropic_api_key,
-         tariffe_json = EXCLUDED.tariffe_json`,
-      [req.user.id, newKey, newTariffeJson]
+         tariffe_json = EXCLUDED.tariffe_json,
+         emittente_nome = EXCLUDED.emittente_nome,
+         emittente_piva = EXCLUDED.emittente_piva,
+         emittente_indirizzo = EXCLUDED.emittente_indirizzo`,
+      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo]
     );
 
     res.json({ ok: true });
