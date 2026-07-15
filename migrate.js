@@ -86,6 +86,12 @@ async function migrate() {
       ALTER TABLE settings ADD COLUMN IF NOT EXISTS targa TEXT DEFAULT '';
     `);
 
+    // Codice fiscale: dell'emittente (per le societa' puo' differire dalla P.IVA) e dell'operatore
+    await client.query(`
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS emittente_cf TEXT DEFAULT '';
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS operatore_cf TEXT DEFAULT '';
+    `);
+
     await client.query('COMMIT');
     console.log('Migrazione completata con successo.');
   } catch (err) {

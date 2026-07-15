@@ -67,8 +67,8 @@ const state = {
   editTrasfertaId: null, // id trasferta in modifica (null = nuova)
 
   settingsForm: { anthropic_api_key: '', tariffe: DEFAULT_TARIFFE.map(t => ({...t})),
-                  emittente_nome: '', emittente_piva: '', emittente_indirizzo: '', operatore: '',
-                  veicolo: '', targa: '' },
+                  emittente_nome: '', emittente_piva: '', emittente_cf: '', emittente_indirizzo: '',
+                  operatore: '', operatore_cf: '', veicolo: '', targa: '' },
 
   toastTimer: null,
 };
@@ -503,8 +503,10 @@ function renderDocumento() {
   const periodo = mese === -1 ? `Anno ${anno}` : `${MESI[mese]} ${anno}`;
   const nome = settings.emittente_nome || '';
   const piva = settings.emittente_piva || '';
+  const cf = settings.emittente_cf || '';
   const indir = settings.emittente_indirizzo || '';
   const operatore = settings.operatore || '';
+  const operatoreCf = settings.operatore_cf || '';
   const veicolo = settings.veicolo || '';
   const targa = settings.targa || '';
   const oggi = new Date().toLocaleDateString('it-IT');
@@ -524,7 +526,10 @@ function renderDocumento() {
       <div class="doc-head">
         <div class="doc-emitt">
           <div class="doc-emitt-nome">${esc(nome) || 'Nome / Ragione sociale'}</div>
-          ${piva ? `<div class="doc-emitt-line">P.IVA / C.F. ${esc(piva)}</div>` : ''}
+          ${(piva || cf) ? `<div class="doc-emitt-line">${[
+            piva ? `P.IVA ${esc(piva)}` : '',
+            cf ? `C.F. ${esc(cf)}` : '',
+          ].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>` : ''}
           ${indir ? `<div class="doc-emitt-line">${esc(indir)}</div>` : ''}
         </div>
         <div class="doc-title">
@@ -537,6 +542,7 @@ function renderDocumento() {
       <div class="doc-operatore">
         <span class="doc-op-label">Rimborso spettante a</span>
         <span class="doc-op-nome">${esc(operatore) || '________________________'}</span>
+        ${operatoreCf ? `<span class="doc-op-cf"><span class="doc-op-sub">C.F.</span>${esc(operatoreCf)}</span>` : ''}
         ${(veicolo || targa) ? `<span class="doc-op-veicolo">
           ${veicolo ? `<span><span class="doc-op-sub">Veicolo</span> ${esc(veicolo)}</span>` : ''}
           ${targa ? `<span><span class="doc-op-sub">Targa</span> ${esc(targa)}</span>` : ''}
@@ -604,17 +610,27 @@ function renderImpostazioni() {
       </div>
       <div class="grid-2">
         <div class="form-group">
-          <label>Partita IVA / C.F.</label>
+          <label>Partita IVA</label>
           <input id="emPiva" value="${esc(settingsForm.emittente_piva)}" placeholder="Es. 04611370232">
         </div>
         <div class="form-group">
-          <label>Indirizzo</label>
-          <input id="emIndirizzo" value="${esc(settingsForm.emittente_indirizzo)}" placeholder="Es. Via Ormaneto 26, Bovolone (VR)">
+          <label>Codice fiscale</label>
+          <input id="emCf" value="${esc(settingsForm.emittente_cf)}" placeholder="Es. 04611370232">
         </div>
       </div>
       <div class="form-group">
-        <label>Operatore (a chi spetta il rimborso)</label>
-        <input id="emOperatore" value="${esc(settingsForm.operatore)}" placeholder="Es. Geom. Leonardo Massafra">
+        <label>Indirizzo</label>
+        <input id="emIndirizzo" value="${esc(settingsForm.emittente_indirizzo)}" placeholder="Es. Via Ormaneto 26, Bovolone (VR)">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Operatore (a chi spetta il rimborso)</label>
+          <input id="emOperatore" value="${esc(settingsForm.operatore)}" placeholder="Es. Geom. Leonardo Massafra">
+        </div>
+        <div class="form-group">
+          <label>Codice fiscale operatore</label>
+          <input id="emOperatoreCf" value="${esc(settingsForm.operatore_cf)}" placeholder="Es. MSSLRD80A01A123B">
+        </div>
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -1185,7 +1201,7 @@ function attachImpostazioniListeners() {
   });
   document.getElementById('saveSettingsBtn')?.addEventListener('click', saveSettings);
 
-  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emIndirizzo:'emittente_indirizzo', emOperatore:'operatore', emVeicolo:'veicolo', emTarga:'targa' };
+  const emFields = { emNome:'emittente_nome', emPiva:'emittente_piva', emCf:'emittente_cf', emIndirizzo:'emittente_indirizzo', emOperatore:'operatore', emOperatoreCf:'operatore_cf', emVeicolo:'veicolo', emTarga:'targa' };
   Object.entries(emFields).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', e => { state.settingsForm[key] = e.target.value; });
   });
@@ -1195,18 +1211,22 @@ function attachImpostazioniListeners() {
 async function saveAnagrafica() {
   const emittente_nome      = document.getElementById('emNome')?.value      ?? state.settingsForm.emittente_nome;
   const emittente_piva      = document.getElementById('emPiva')?.value      ?? state.settingsForm.emittente_piva;
+  const emittente_cf        = document.getElementById('emCf')?.value        ?? state.settingsForm.emittente_cf;
   const emittente_indirizzo = document.getElementById('emIndirizzo')?.value ?? state.settingsForm.emittente_indirizzo;
   const operatore           = document.getElementById('emOperatore')?.value ?? state.settingsForm.operatore;
+  const operatore_cf        = document.getElementById('emOperatoreCf')?.value ?? state.settingsForm.operatore_cf;
   const veicolo             = document.getElementById('emVeicolo')?.value    ?? state.settingsForm.veicolo;
   const targa               = document.getElementById('emTarga')?.value      ?? state.settingsForm.targa;
   try {
-    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa });
+    await apiCall('PUT', '/api/settings', { emittente_nome, emittente_piva, emittente_cf, emittente_indirizzo, operatore, operatore_cf, veicolo, targa });
     const s = await fetch('/api/settings').then(r => r.json());
     state.settings = s;
     state.settingsForm.emittente_nome = s.emittente_nome || '';
     state.settingsForm.emittente_piva = s.emittente_piva || '';
+    state.settingsForm.emittente_cf = s.emittente_cf || '';
     state.settingsForm.emittente_indirizzo = s.emittente_indirizzo || '';
     state.settingsForm.operatore = s.operatore || '';
+    state.settingsForm.operatore_cf = s.operatore_cf || '';
     state.settingsForm.veicolo = s.veicolo || '';
     state.settingsForm.targa = s.targa || '';
     showToast('Intestazione salvata!');
@@ -1266,8 +1286,10 @@ async function init() {
     state.settingsForm.tariffe = state.tariffe.map(t => ({...t}));
     state.settingsForm.emittente_nome = settings.emittente_nome || '';
     state.settingsForm.emittente_piva = settings.emittente_piva || '';
+    state.settingsForm.emittente_cf = settings.emittente_cf || '';
     state.settingsForm.emittente_indirizzo = settings.emittente_indirizzo || '';
     state.settingsForm.operatore = settings.operatore || '';
+    state.settingsForm.operatore_cf = settings.operatore_cf || '';
     state.settingsForm.veicolo = settings.veicolo || '';
     state.settingsForm.targa = settings.targa || '';
 

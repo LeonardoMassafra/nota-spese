@@ -36,8 +36,10 @@ router.get('/', requireAuth, async (req, res) => {
       tariffe: parseTariffe(settings?.tariffe_json),
       emittente_nome: settings?.emittente_nome || '',
       emittente_piva: settings?.emittente_piva || '',
+      emittente_cf: settings?.emittente_cf || '',
       emittente_indirizzo: settings?.emittente_indirizzo || '',
       operatore: settings?.operatore || '',
+      operatore_cf: settings?.operatore_cf || '',
       veicolo: settings?.veicolo || '',
       targa: settings?.targa || '',
     });
@@ -48,7 +50,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.put('/', requireAuth, async (req, res) => {
-  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa } = req.body;
+  const { anthropic_api_key, tariffe, emittente_nome, emittente_piva, emittente_cf, emittente_indirizzo, operatore, operatore_cf, veicolo, targa } = req.body;
 
   try {
     const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.id]);
@@ -69,24 +71,28 @@ router.put('/', requireAuth, async (req, res) => {
     // Anagrafica emittente: se il campo non arriva nel body si mantiene quello attuale
     const newNome = emittente_nome !== undefined ? String(emittente_nome).trim() : (current?.emittente_nome || '');
     const newPiva = emittente_piva !== undefined ? String(emittente_piva).trim() : (current?.emittente_piva || '');
+    const newCf = emittente_cf !== undefined ? String(emittente_cf).trim().toUpperCase() : (current?.emittente_cf || '');
     const newIndirizzo = emittente_indirizzo !== undefined ? String(emittente_indirizzo).trim() : (current?.emittente_indirizzo || '');
     const newOperatore = operatore !== undefined ? String(operatore).trim() : (current?.operatore || '');
+    const newOperatoreCf = operatore_cf !== undefined ? String(operatore_cf).trim().toUpperCase() : (current?.operatore_cf || '');
     const newVeicolo = veicolo !== undefined ? String(veicolo).trim() : (current?.veicolo || '');
     const newTarga = targa !== undefined ? String(targa).trim() : (current?.targa || '');
 
     await pool.query(
-      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_indirizzo, operatore, veicolo, targa)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO settings (user_id, anthropic_api_key, tariffe_json, emittente_nome, emittente_piva, emittente_cf, emittente_indirizzo, operatore, operatore_cf, veicolo, targa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (user_id) DO UPDATE SET
          anthropic_api_key = EXCLUDED.anthropic_api_key,
          tariffe_json = EXCLUDED.tariffe_json,
          emittente_nome = EXCLUDED.emittente_nome,
          emittente_piva = EXCLUDED.emittente_piva,
+         emittente_cf = EXCLUDED.emittente_cf,
          emittente_indirizzo = EXCLUDED.emittente_indirizzo,
          operatore = EXCLUDED.operatore,
+         operatore_cf = EXCLUDED.operatore_cf,
          veicolo = EXCLUDED.veicolo,
          targa = EXCLUDED.targa`,
-      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newIndirizzo, newOperatore, newVeicolo, newTarga]
+      [req.user.id, newKey, newTariffeJson, newNome, newPiva, newCf, newIndirizzo, newOperatore, newOperatoreCf, newVeicolo, newTarga]
     );
 
     res.json({ ok: true });
